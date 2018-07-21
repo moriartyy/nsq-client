@@ -7,7 +7,6 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
-import io.netty.util.concurrent.Future;
 
 /**
  * @author hongmiao.yu
@@ -15,10 +14,6 @@ import io.netty.util.concurrent.Future;
 public class NettyHelper {
 
     public static final byte[] MAGIC_PROTOCOL_VERSION = "  V2".getBytes();
-
-    public static String getErrorMessage(Future<Channel> future) {
-        return future.cause() != null ? future.cause().getMessage() : null;
-    }
 
     public static Bootstrap createBootstrap(ServerAddress serverAddress) {
         return createBootstrap(serverAddress, 0);

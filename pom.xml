@@ -175,17 +175,5 @@
             <classifier>${os.detected.classifier}</classifier>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>com.google.guava</groupId>
-            <artifactId>guava</artifactId>
-            <version>19.0</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>mtime.lark</groupId>
-            <artifactId>lark-util</artifactId>
-            <version>1.1.17</version>
-            <scope>test</scope>
-        </dependency>
     </dependencies>
 </project>

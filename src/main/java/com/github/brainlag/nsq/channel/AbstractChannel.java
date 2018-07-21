@@ -8,7 +8,6 @@ import com.github.brainlag.nsq.frames.MessageFrame;
 import com.github.brainlag.nsq.frames.ResponseFrame;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import sun.rmi.runtime.Log;
 
 import java.util.Date;
 import java.util.concurrent.*;
@@ -73,7 +72,7 @@ public abstract class AbstractChannel implements Channel {
 
     @Override
     public void send(Command command) {
-        LOGGER.info("Sending command {}", command.getLine().substring(0, command.getLine().length() - 1));
+        LOGGER.debug("Sending command {}", command.getLine());
         doSend(command);
     }
 
@@ -115,24 +114,33 @@ public abstract class AbstractChannel implements Channel {
 
     public void receive(Frame frame) {
         if (frame instanceof ResponseFrame) {
-            ResponseFrame response = (ResponseFrame) frame;
-            if (response.isHeartbeat()) {
-                send(Command.NOP);
-            } else {
-                handleResponse(Response.ok(response.getMessage()));
-            }
+            receiveResponseFrame((ResponseFrame) frame);
         } else if (frame instanceof ErrorFrame) {
-            handleResponse(Response.error(((ErrorFrame) frame).getErrorMessage()));
+            receiveErrorFrame((ErrorFrame) frame);
         } else if (frame instanceof MessageFrame) {
-            handleMessage(toMessage((MessageFrame) frame));
+            receiveMessageFrame((MessageFrame) frame);
         }
     }
 
-    private void handleMessage(Message message) {
+    private void receiveErrorFrame(ErrorFrame frame) {
+        handleResponse(Response.error(frame.getErrorMessage()));
+    }
+
+    private void receiveResponseFrame(ResponseFrame response) {
+        LOGGER.debug("Received response: {}", response.getMessage());
+        if (response.isHeartbeat()) {
+            send(Command.NOP);
+        } else {
+            handleResponse(Response.ok(response.getMessage()));
+        }
+    }
+
+    private void receiveMessageFrame(MessageFrame message) {
+        LOGGER.debug("Received message: {}", new String(message.getMessageId()));
         if (messageHandler != null) {
             leftMessages.getAndIncrement();
             try {
-                this.messageHandler.process(message);
+                this.messageHandler.process(toMessage(message));
             } catch (Exception e) {
                 LOGGER.error("Process message failed", e);
             }
@@ -140,7 +148,6 @@ public abstract class AbstractChannel implements Channel {
     }
 
     private void handleResponse(Response response) {
-        LOGGER.debug("Received response: {}", response.getMessage());
         ResponseHandler responseHandler = this.responseHandlers.poll();
         if (responseHandler != null) {
             responseHandler.onResponse(response);
@@ -167,11 +174,12 @@ public abstract class AbstractChannel implements Channel {
 
         void onResponse(Response response) {
             this.response = response;
+            this.latch.countDown();
         }
 
         Response getResponse() throws TimeoutException, InterruptedException {
             if (!latch.await(10, TimeUnit.SECONDS)) {
-                throw new TimeoutException("Future did not complete in time");
+                throw new TimeoutException("No response returned before timeout");
             }
             return this.response;
         }

@@ -10,12 +10,15 @@ import java.util.List;
 
 public class NettyEncoder extends MessageToMessageEncoder<Command> {
 
+    private static final byte[] NEW_LINE_BYTES = "\n".getBytes();
+
 	@Override
 	protected void encode(ChannelHandlerContext ctx, Command message, List<Object> out) throws Exception {
 		ByteBuf buf = Unpooled.buffer();
 		buf.writeBytes(message.getLine().getBytes("utf8"));
-		
-		//for MPUB messages.
+        buf.writeBytes(NEW_LINE_BYTES);
+
+        //for MPUB messages.
 		if (message.getData().size() > 1) {
 			//write total bodysize and message size
 			int bodySize = 4; //4 for total messages int.

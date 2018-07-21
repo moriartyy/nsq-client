@@ -19,10 +19,6 @@ public class Command {
     }
 
     public void setLine(String line) {
-        if (!line.endsWith("\n")) {
-            line = line + "\n";
-        }
-
         this.line = line;
     }
 
@@ -35,7 +31,7 @@ public class Command {
     }
 
     public String toString() {
-        return this.getLine().trim();
+        return this.getLine();
     }
 
     // ASCII stores a reference to the charset needed for commands

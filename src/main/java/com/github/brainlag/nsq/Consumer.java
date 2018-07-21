@@ -67,7 +67,7 @@ public class Consumer implements Closeable {
             channel.send(Command.subscribe(this.topic, this.channel));
             channel.send(Command.ready(messagesPerBatch));
             return channel;
-        } catch (final NoConnectionsException e) {
+        } catch (final Exception e) {
             LOGGER.warn("Could not create connection to server {}", serverAddress.toString(), e);
             return null;
         }

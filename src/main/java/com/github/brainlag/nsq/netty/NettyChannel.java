@@ -1,20 +1,16 @@
 package com.github.brainlag.nsq.netty;
 
-import com.github.brainlag.nsq.*;
+import com.github.brainlag.nsq.Command;
+import com.github.brainlag.nsq.Config;
+import com.github.brainlag.nsq.ServerAddress;
 import com.github.brainlag.nsq.channel.AbstractChannel;
 import com.github.brainlag.nsq.channel.Channel;
 import com.github.brainlag.nsq.exceptions.NSQException;
-import com.github.brainlag.nsq.frames.ErrorFrame;
-import com.github.brainlag.nsq.frames.Frame;
-import com.github.brainlag.nsq.frames.MessageFrame;
-import com.github.brainlag.nsq.frames.ResponseFrame;
 import io.netty.buffer.Unpooled;
 import io.netty.util.AttributeKey;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -28,9 +24,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
     private io.netty.channel.Channel channel;
 
     public static NettyChannel instance(io.netty.channel.Channel channel, ServerAddress serverAddress, Config config) {
-        LOGGER.info("NettyChannel created, total: {}", instanceCount.incrementAndGet());
         NettyChannel nettyChannel = new NettyChannel(serverAddress, config, channel);
-
         nettyChannel.getChannel().write(Unpooled.wrappedBuffer(NettyHelper.MAGIC_PROTOCOL_VERSION));
         nettyChannel.getChannel().flush();
         try {
@@ -38,6 +32,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
         } catch (Exception e) {
             throw new NSQException("identify failed", e);
         }
+        LOGGER.info("NettyChannel created, total: {}", instanceCount.incrementAndGet());
         return nettyChannel;
     }
 
