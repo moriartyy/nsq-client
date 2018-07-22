@@ -12,10 +12,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class Consumer implements Closeable {
     protected static final Logger LOGGER = LogManager.getLogger(Consumer.class);
@@ -32,9 +29,10 @@ public class Consumer implements Closeable {
     private int threads = Runtime.getRuntime().availableProcessors() * 2;
     private volatile int maxInFlight;
     private volatile int channelRdy;
+    private float saturationFactor = 1.5F;
     private long lookupPeriod = 60 * 1000; // how often to recheck for new nodes (and clean up non responsive nodes)
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
-    private Executor executor;
+    private ThreadPoolExecutor executor;
 
     public Consumer(final Lookup lookup, final String topic, final String channel, final MessageHandler messageHandler) {
         this(lookup, topic, channel, messageHandler, new Config());
@@ -42,34 +40,42 @@ public class Consumer implements Closeable {
 
     public Consumer(final Lookup lookup, final String topic, final String channel, final MessageHandler messageHandler,
                     final Config config) {
+        this.threads = 4;
+
         this.lookup = lookup;
         this.topic = topic;
         this.channel = channel;
         this.config = config;
         this.messageHandler = messageHandler;
-        this.executor = new Executor(threads, this::awakenAll);
+        this.executor = new ThreadPoolExecutor(this.threads, this.threads,
+                1L, TimeUnit.MINUTES,
+                new LinkedBlockingQueue<>());
+        this.maxInFlight = Math.round(threads * this.saturationFactor);
         this.maintenanceChannels();
         this.scheduler.scheduleAtFixedRate(this::maintenanceChannels, lookupPeriod, lookupPeriod, TimeUnit.MILLISECONDS);
     }
 
 
     protected void printStats(Logger logger) {
-        logger.info("maxInFlight: {}, channelRdy: {}, threads: {}, idle: {}",
-                this.maxInFlight, this.channelRdy, threads, executor.isIdle());
+        logger.info("maxInFlight: {}, channelRdy: {}, threads: {}, queueSize: {}",
+                this.maxInFlight, this.channelRdy, threads, executor.getQueue().size());
         this.channels.values().forEach(c -> {
             logger.info("  c.inFlight: {}, c.ready: {}", c.getInFlight(), c.getReady());
         });
     }
 
-    private void updateMaxInFlight() {
-        this.maxInFlight = threads + threads * 2;
-        this.channelRdy = this.maxInFlight / this.channels.size();
-    }
-
     private void maintenanceChannels() {
         removeDisconnectedChannels();
         updateChannelsByLookup();
-        updateMaxInFlight();
+        updateChannelRdys();
+    }
+
+    private void updateChannelRdys() {
+        int newRdy = this.maxInFlight / this.channels.size();
+        if (newRdy != this.channelRdy) {
+            this.channelRdy = newRdy;
+            this.channels.values().forEach(c -> c.sendReady(this.channelRdy));
+        }
     }
 
     private void removeDisconnectedChannels() {
@@ -94,7 +100,7 @@ public class Consumer implements Closeable {
     }
 
     public int getQueueSize() {
-        return this.executor.getQueueSize();
+        return this.executor.getQueue().size();
     }
 
     private Channel createChannel(final ServerAddress serverAddress) {
@@ -123,14 +129,17 @@ public class Consumer implements Closeable {
             return;
         }
 
-        final Channel channel = message.getChannel();
+        this.executor.execute(() -> {
+            this.messageHandler.process(message);
+        });
 
-        if (!executor.submit(messageHandler, message)) {
+//        final Channel channel = message.getChannel();
+//        if (!executor.submit(messageHandler, message)) {
 //                LOGGER.trace("Backing off");
-            halt(channel);
-        } else {
-            updateChannelRdy(channel);
-        }
+//            halt(channel);
+//        } else {
+//            updateChannelRdy(channel);
+//        }
 
 //        if (message.getChannel().getLeftMessages() < (messagesPerBatch / 2)) {
 //            //request some more!
