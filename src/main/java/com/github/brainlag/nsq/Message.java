@@ -18,13 +18,13 @@ public class Message {
      */
     public void finished() {
         if (!this.handled) {
-            channel.send(Command.finish(this.id));
+            channel.sendFinish(this.id);
             this.handled = true;
         }
     }
 
     public void touch() {
-        channel.send(Command.touch(this.id));
+        channel.sendTouch(this.id);
     }
 
     /**
@@ -32,7 +32,7 @@ public class Message {
      */
     public void requeue(int timeoutMillis) {
         if (!this.handled) {
-            channel.send(Command.requeue(this.id, timeoutMillis));
+            channel.sendRequeue(this.id, timeoutMillis);
             this.handled = true;
         }
     }

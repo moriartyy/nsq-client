@@ -1,8 +1,10 @@
 package com.github.brainlag.nsq.netty;
 
 import com.github.brainlag.nsq.ServerAddress;
+import com.github.brainlag.nsq.exceptions.NoConnectionsException;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -39,5 +41,15 @@ public class NettyHelper {
         pipeline.addLast("NSQEncoder", new NettyEncoder()); // out
         pipeline.addLast("FeatureDetectionHandler", new NettyFeatureDetectionHandler());
         pipeline.addLast("NSQHandler", new NettyHandler()); // in
+    }
+
+    public static Channel openChannel(ServerAddress serverAddress) {
+        Bootstrap bootstrap = createBootstrap(serverAddress);
+        ChannelFuture future = bootstrap.connect();
+        future.awaitUninterruptibly();
+        if (!future.isSuccess()) {
+            throw new NoConnectionsException("Could not connect to server", future.cause());
+        }
+        return future.channel();
     }
 }

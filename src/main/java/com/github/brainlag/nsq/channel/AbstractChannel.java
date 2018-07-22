@@ -10,7 +10,10 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.util.Date;
-import java.util.concurrent.*;
+import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -23,6 +26,8 @@ public abstract class AbstractChannel implements Channel {
     private final Config config;
     private AtomicInteger leftMessages = new AtomicInteger(0);
     private MessageHandler messageHandler;
+    private AtomicInteger inFlight = new AtomicInteger();
+    private volatile int ready = 0;
 
     public AbstractChannel(ServerAddress serverAddress, Config config) {
         this.serverAddress = serverAddress;
@@ -71,24 +76,27 @@ public abstract class AbstractChannel implements Channel {
     }
 
     @Override
-    public void send(Command command) {
+    public void send(Command command) throws NSQException {
         LOGGER.debug("Sending command {}", command.getLine());
-        doSend(command);
+        try {
+            doSend(command);
+        } catch (NSQException e) {
+            throw e;
+        } catch (Exception e1) {
+            throw new NSQException("Send command failed", e1);
+        }
     }
 
     protected abstract void doSend(Command command);
 
     @Override
-    public synchronized Response sendAndWait(Command command) throws TimeoutException, InterruptedException {
-        if (command == Command.NOP) {
-            send(command);
-        }
+    public synchronized Response sendAndWait(Command command) throws NSQException {
         ResponseHandler responseHandler = new ResponseHandler();
         queueResponseHandler(responseHandler);
 
         try {
             send(command);
-        } catch (Exception e) {
+        } catch (NSQException e) {
             dequeueResponseHandler(responseHandler);
             throw e;
         }
@@ -107,9 +115,36 @@ public abstract class AbstractChannel implements Channel {
     }
 
     @Override
-    public void ready(int size) {
-        this.leftMessages.set(size);
-        send(Command.ready(size));
+    public void sendReady(int count) throws NSQException {
+        this.leftMessages.set(count);
+        send(Command.ready(count));
+    }
+
+    @Override
+    public void sendRequeue(byte[] messageId) throws NSQException {
+        sendRequeue(messageId, 0L);
+    }
+
+    @Override
+    public void sendRequeue(byte[] messageId, long timeoutMS) throws NSQException {
+        send(Command.requeue(messageId, timeoutMS));
+        this.inFlight.getAndDecrement();
+    }
+
+    @Override
+    public void sendFinish(byte[] messageId) throws NSQException {
+        send(Command.finish(messageId));
+        this.inFlight.getAndDecrement();
+    }
+
+    @Override
+    public void sendTouch(byte[] messageId) throws NSQException {
+        send(Command.touch(messageId));
+    }
+
+    @Override
+    public Response sendSubscribe(String topic, String channel) throws NSQException {
+        return sendAndWait(Command.subscribe(topic, channel));
     }
 
     public void receive(Frame frame) {
@@ -136,7 +171,12 @@ public abstract class AbstractChannel implements Channel {
     }
 
     private void receiveMessageFrame(MessageFrame message) {
-        LOGGER.debug("Received message: {}", new String(message.getMessageId()));
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("Received message: {}", new String(message.getMessageId()));
+        }
+
+        this.inFlight.incrementAndGet();
+
         if (messageHandler != null) {
             leftMessages.getAndIncrement();
             try {
@@ -177,9 +217,13 @@ public abstract class AbstractChannel implements Channel {
             this.latch.countDown();
         }
 
-        Response getResponse() throws TimeoutException, InterruptedException {
-            if (!latch.await(10, TimeUnit.SECONDS)) {
-                throw new TimeoutException("No response returned before timeout");
+        Response getResponse() throws NSQException {
+            try {
+                if (!latch.await(10, TimeUnit.SECONDS)) {
+                    throw new NSQException("No response returned before timeout");
+                }
+            } catch (InterruptedException e) {
+                throw new NSQException("Get response is interrupted");
             }
             return this.response;
         }

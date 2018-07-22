@@ -76,7 +76,7 @@ public class Command {
         return Command.instance("CLS");
     }
 
-    public static Command requeue(byte[] messageID, int timeoutMillis) {
+    public static Command requeue(byte[] messageID, long timeoutMillis) {
         return Command.instance("REQ " + new String(messageID, ASCII) + " " + timeoutMillis);
     }
 

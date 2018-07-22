@@ -1,18 +1,21 @@
 package com.github.brainlag.nsq;
 
 import com.github.brainlag.nsq.channel.Channel;
-import com.github.brainlag.nsq.exceptions.NoConnectionsException;
+import com.github.brainlag.nsq.exceptions.NSQException;
 import com.github.brainlag.nsq.lookup.Lookup;
 import com.github.brainlag.nsq.netty.NettyChannel;
-import com.github.brainlag.nsq.netty.NettyHelper;
-import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.ChannelFuture;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.Closeable;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class Consumer implements Closeable {
@@ -47,7 +50,48 @@ public class Consumer implements Closeable {
         this.messageHandler = messageHandler;
         this.messagesPerBatch = config.getMaxInFlight().orElse(200);
         this.executor = new Executor(threads, this::awakenAll);
-        this.scheduler.scheduleAtFixedRate(this::connect, 0, lookupPeriod, TimeUnit.MILLISECONDS);
+        this.maintenanceChannels();
+        this.scheduler.scheduleAtFixedRate(this::maintenanceChannels, lookupPeriod, lookupPeriod, TimeUnit.MILLISECONDS);
+    }
+
+    private void maintenanceChannels() {
+        removeDisconnectedChannels();
+        updateChannelsByLookup();
+
+        // 防止连接停摆的补漏机制
+        if (executor.isIdle()) {
+            try {
+                int threshold = Math.min(messagesPerBatch, 5);
+                channels.forEach((server, channel) -> {
+                    if (channel.getLeftMessages() < threshold) {
+                        channel.sendReady(threshold);
+                    }
+                });
+            } catch (Exception e) {
+                LOGGER.warn("recover from idle failed", e);
+            }
+        }
+    }
+
+    private void removeDisconnectedChannels() {
+        this.channels.values().removeIf(c -> !c.isConnected());
+    }
+
+    private void updateChannelsByLookup() {
+        Set<ServerAddress> found = lookup();
+
+        if (found.isEmpty()) {
+            return;
+        }
+
+        this.channels.forEach((s, c) -> {
+            if (!found.contains(s)) {
+                c.close();
+                this.channels.remove(s);
+            }
+        });
+
+        found.forEach(s -> this.channels.computeIfAbsent(s, this::createChannel));
     }
 
     public int getQueueSize() {
@@ -56,16 +100,13 @@ public class Consumer implements Closeable {
 
     private Channel createChannel(final ServerAddress serverAddress) {
         try {
-            Bootstrap bootstrap = NettyHelper.createBootstrap(serverAddress);
-            ChannelFuture future = bootstrap.connect();
-            future.awaitUninterruptibly();
-            if (!future.isSuccess()) {
-                throw new NoConnectionsException("Could not connect to server", future.cause());
-            }
-            Channel channel = NettyChannel.instance(future.channel(), serverAddress, config);
+            Channel channel = NettyChannel.instance(serverAddress, config);
             channel.setMessageHandler(this::processMessage);
-            channel.send(Command.subscribe(this.topic, this.channel));
-            channel.send(Command.ready(messagesPerBatch));
+            Response response = channel.sendSubscribe(this.topic, this.channel);
+            if (response.getStatus() == Response.Status.ERROR) {
+                throw new NSQException("Subscribe failed reason: " + response.getMessage());
+            }
+            channel.sendReady(1);
             return channel;
         } catch (final Exception e) {
             LOGGER.warn("Could not create connection to server {}", serverAddress.toString(), e);
@@ -90,22 +131,22 @@ public class Consumer implements Closeable {
 
         if (message.getChannel().getLeftMessages() < (messagesPerBatch / 2)) {
             //request some more!
-            message.getChannel().ready(messagesPerBatch);
+            message.getChannel().sendReady(messagesPerBatch);
         }
     }
 
     private void halt(Channel channel) {
-       if(haltedChannels.add(channel))  {
-           LOGGER.trace("Backing off, halt connection: " + channel.getRemoteServerAddress());
-           channel.ready(0);
-       }
+        if (haltedChannels.add(channel)) {
+            LOGGER.trace("Backing off, halt connection: " + channel.getRemoteServerAddress());
+            channel.sendReady(0);
+        }
     }
 
     private synchronized void awakenAll() {
         if (haltedChannels.size() > 0) {
             LOGGER.trace("Awaken halt connections");
             try {
-                haltedChannels.forEach(channel -> channel.ready(1));
+                haltedChannels.forEach(channel -> channel.sendReady(1));
             } finally {
                 haltedChannels.clear();
             }
@@ -122,95 +163,12 @@ public class Consumer implements Closeable {
         }
     }
 
-    private void connect() {
-        for (final Iterator<Map.Entry<ServerAddress, Channel>> it = channels.entrySet().iterator(); it.hasNext(); ) {
-            Channel channel = it.next().getValue();
-            if (!channel.isConnected()) {
-                LOGGER.warn("Remove disconnected connection: " + channel.getRemoteServerAddress());
-                channel.close();
-                it.remove();
-            }
-//            if (conn.getHeartbeatTime().plusMinutes(1).isBefore(LocalDateTime.now())) {
-//                LOGGER.warn("Remove disconnected connection: " + conn.getServerAddress());
-//                conn.close();
-//                it.remove();
-//            }
-        }
-
-        // 防止连接停摆的补漏机制
-        if (executor.isIdle()) {
-            try {
-                int threshold = Math.min(messagesPerBatch, 5);
-                channels.forEach((server, channel) -> {
-                    if (channel.getLeftMessages() < threshold) {
-                        channel.ready(threshold);
-                    }
-                });
-            } catch (Exception e) {
-                LOGGER.warn("recover from idle failed", e);
-            }
-        }
-
-        final Set<ServerAddress> newAddresses = lookupAddresses();
-        final Set<ServerAddress> oldAddresses = channels.keySet();
-
-        LOGGER.debug("Addresses NSQ connected to: " + newAddresses);
-        if (newAddresses.isEmpty()) {
-            // in case the lookup server is not reachable for a short time we don't we dont want to
-            // force close connection
-            // just log a message and keep moving
-            LOGGER.warn("No NSQLookup server connections or topic does not exist.");
-        } else {
-            for (ServerAddress oldAddress : oldAddresses) {
-                if (!newAddresses.contains(oldAddress)) {
-                    LOGGER.info("Remove server " + oldAddress.toString());
-                    channels.get(oldAddress).close();
-                    channels.remove(oldAddress);
-                }
-            }
-            for (ServerAddress newAddress : newAddresses) {
-                if (!channels.containsKey(newAddress)) {
-                    final Channel channel = createChannel(newAddress);
-                    if (channel != null) {
-                        channels.put(newAddress, channel);
-                    }
-                }
-            }
-        }
-    }
-
     public long getTotalMessages() {
         return totalMessages.get();
     }
 
-    /**
-     * This is the executor where the callbacks happen.
-     * The executer can only changed before the client is started.
-     * Default is a cached threadpool.
-     */
-//    public NSQConsumer setExecutor(final ExecutorService executor) {
-//        if (!started) {
-//            this.executor = executor;
-//        }
-//        return this;
-//    }
-    private Set<ServerAddress> lookupAddresses() {
+    private Set<ServerAddress> lookup() {
         return lookup.lookup(topic);
-    }
-
-    /**
-     * This method allows for a runnable task to be scheduled using the NSQConsumer's scheduler executor
-     * This is intended for calling a periodic method in a NSQMessageCallback for batching messages
-     * without needing state in the callback itself
-     *
-     * @param task   The Runnable task
-     * @param delay  Delay in milliseconds
-     * @param period Period of time between scheduled runs
-     * @param unit   TimeUnit for delay and period times
-     * @return ScheduledFuture - useful for cancelling scheduled task
-     */
-    public ScheduledFuture scheduleRun(Runnable task, int delay, int period, TimeUnit unit) {
-        return scheduler.scheduleAtFixedRate(task, delay, period, unit);
     }
 
     @Override

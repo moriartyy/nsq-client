@@ -1,9 +1,7 @@
 package com.github.brainlag.nsq.channel;
 
 import com.github.brainlag.nsq.*;
-
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeoutException;
+import com.github.brainlag.nsq.exceptions.NSQException;
 
 /**
  * @author hongmiao.yu
@@ -42,7 +40,7 @@ public class DelegateChannel implements Channel {
     }
 
     @Override
-    public Response sendAndWait(Command command) throws TimeoutException, InterruptedException {
+    public Response sendAndWait(Command command) throws NSQException {
         return delegate.sendAndWait(command);
     }
 
@@ -57,7 +55,12 @@ public class DelegateChannel implements Channel {
     }
 
     @Override
-    public void ready(int count) {
-        delegate.ready(count);
+    public void sendReady(int count) {
+        delegate.sendReady(count);
+    }
+
+    @Override
+    public void sendRequeue(byte[] messageId, long timeoutMS) {
+        delegate.sendRequeue(messageId, timeoutMS);
     }
 }

@@ -23,8 +23,12 @@ public class NettyChannel extends AbstractChannel implements Channel {
 
     private io.netty.channel.Channel channel;
 
+    public static NettyChannel instance(ServerAddress serverAddress, Config config) {
+        return instance(NettyHelper.openChannel(serverAddress), serverAddress, config);
+    }
+
     public static NettyChannel instance(io.netty.channel.Channel channel, ServerAddress serverAddress, Config config) {
-        NettyChannel nettyChannel = new NettyChannel(serverAddress, config, channel);
+        NettyChannel nettyChannel = new NettyChannel(channel, serverAddress, config);
         nettyChannel.getChannel().write(Unpooled.wrappedBuffer(NettyHelper.MAGIC_PROTOCOL_VERSION));
         nettyChannel.getChannel().flush();
         try {
@@ -36,7 +40,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
         return nettyChannel;
     }
 
-    private NettyChannel(ServerAddress serverAddress, Config config, io.netty.channel.Channel channel) {
+    private NettyChannel(io.netty.channel.Channel channel, ServerAddress serverAddress, Config config) {
         super(serverAddress, config);
         this.channel = channel;
         channel.attr(CHANNEL_KEY).set(this);
