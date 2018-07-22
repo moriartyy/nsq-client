@@ -24,7 +24,6 @@ public abstract class AbstractChannel implements Channel {
     private BlockingDeque<ResponseHandler> responseHandlers = new LinkedBlockingDeque<>(10);
     private final ServerAddress serverAddress;
     private final Config config;
-    private AtomicInteger leftMessages = new AtomicInteger(0);
     private MessageHandler messageHandler;
     private AtomicInteger inFlight = new AtomicInteger();
     private volatile int ready = 0;
@@ -35,14 +34,20 @@ public abstract class AbstractChannel implements Channel {
     }
 
     @Override
+    public int getInFlight() {
+        return this.inFlight.get();
+    }
+
+    @Override
+    public int getReady() {
+        return ready;
+    }
+
+    @Override
     public Config getConfig() {
         return config;
     }
 
-    @Override
-    public int getLeftMessages() {
-        return this.leftMessages.get();
-    }
 
     @Override
     public void setMessageHandler(MessageHandler messageHandler) {
@@ -116,7 +121,7 @@ public abstract class AbstractChannel implements Channel {
 
     @Override
     public void sendReady(int count) throws NSQException {
-        this.leftMessages.set(count);
+        this.ready = count;
         send(Command.ready(count));
     }
 
@@ -175,15 +180,16 @@ public abstract class AbstractChannel implements Channel {
             LOGGER.debug("Received message: {}", new String(message.getMessageId()));
         }
 
-        this.inFlight.incrementAndGet();
+        if (messageHandler == null) {
+            return;
+        }
 
-        if (messageHandler != null) {
-            leftMessages.getAndIncrement();
-            try {
-                this.messageHandler.process(toMessage(message));
-            } catch (Exception e) {
-                LOGGER.error("Process message failed", e);
-            }
+        this.inFlight.getAndIncrement();
+
+        try {
+            this.messageHandler.process(toMessage(message));
+        } catch (Exception e) {
+            LOGGER.error("Process message failed", e);
         }
     }
 

@@ -16,7 +16,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class Consumer implements Closeable {
     protected static final Logger LOGGER = LogManager.getLogger(Consumer.class);
@@ -29,10 +28,10 @@ public class Consumer implements Closeable {
     //    private volatile long nextTimeout = 0;
     private final Map<ServerAddress, Channel> channels = new ConcurrentHashMap<>();
     private Set<Channel> haltedChannels = Collections.synchronizedSet(new HashSet<>());
-    private final AtomicLong totalMessages = new AtomicLong(0L);
 
-    private int threads = 8;
-    private int messagesPerBatch;
+    private int threads = Runtime.getRuntime().availableProcessors() * 2;
+    private volatile int maxInFlight;
+    private volatile int channelRdy;
     private long lookupPeriod = 60 * 1000; // how often to recheck for new nodes (and clean up non responsive nodes)
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private Executor executor;
@@ -48,29 +47,29 @@ public class Consumer implements Closeable {
         this.channel = channel;
         this.config = config;
         this.messageHandler = messageHandler;
-        this.messagesPerBatch = config.getMaxInFlight().orElse(200);
         this.executor = new Executor(threads, this::awakenAll);
         this.maintenanceChannels();
         this.scheduler.scheduleAtFixedRate(this::maintenanceChannels, lookupPeriod, lookupPeriod, TimeUnit.MILLISECONDS);
     }
 
+
+    protected void printStats(Logger logger) {
+        logger.info("maxInFlight: {}, channelRdy: {}, threads: {}, idle: {}",
+                this.maxInFlight, this.channelRdy, threads, executor.isIdle());
+        this.channels.values().forEach(c -> {
+            logger.info("  c.inFlight: {}, c.ready: {}", c.getInFlight(), c.getReady());
+        });
+    }
+
+    private void updateMaxInFlight() {
+        this.maxInFlight = threads + threads * 2;
+        this.channelRdy = this.maxInFlight / this.channels.size();
+    }
+
     private void maintenanceChannels() {
         removeDisconnectedChannels();
         updateChannelsByLookup();
-
-        // 防止连接停摆的补漏机制
-        if (executor.isIdle()) {
-            try {
-                int threshold = Math.min(messagesPerBatch, 5);
-                channels.forEach((server, channel) -> {
-                    if (channel.getLeftMessages() < threshold) {
-                        channel.sendReady(threshold);
-                    }
-                });
-            } catch (Exception e) {
-                LOGGER.warn("recover from idle failed", e);
-            }
-        }
+        updateMaxInFlight();
     }
 
     private void removeDisconnectedChannels() {
@@ -121,17 +120,27 @@ public class Consumer implements Closeable {
 
         if (messageHandler == null) {
             LOGGER.warn("NO Callback, dropping message: " + message);
-        } else {
-            if (!executor.submit(messageHandler, message)) {
-//                LOGGER.trace("Backing off");
-                halt(message.getChannel());
-                return;
-            }
+            return;
         }
 
-        if (message.getChannel().getLeftMessages() < (messagesPerBatch / 2)) {
-            //request some more!
-            message.getChannel().sendReady(messagesPerBatch);
+        final Channel channel = message.getChannel();
+
+        if (!executor.submit(messageHandler, message)) {
+//                LOGGER.trace("Backing off");
+            halt(channel);
+        } else {
+            updateChannelRdy(channel);
+        }
+
+//        if (message.getChannel().getLeftMessages() < (messagesPerBatch / 2)) {
+//            //request some more!
+//            message.getChannel().sendReady(messagesPerBatch);
+//        }
+    }
+
+    private void updateChannelRdy(Channel channel) {
+        if (channel.getReady() < this.channelRdy) {
+            channel.sendReady(this.channelRdy);
         }
     }
 
@@ -161,10 +170,6 @@ public class Consumer implements Closeable {
                 LOGGER.warn("No clean disconnect {}", channel.getRemoteServerAddress(), e);
             }
         }
-    }
-
-    public long getTotalMessages() {
-        return totalMessages.get();
     }
 
     private Set<ServerAddress> lookup() {

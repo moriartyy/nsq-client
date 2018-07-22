@@ -8,9 +8,11 @@ import com.github.brainlag.nsq.exceptions.NSQException;
  */
 public interface Channel {
 
-    Config getConfig();
+    int getReady();
 
-    int getLeftMessages();
+    int getInFlight();
+
+    Config getConfig();
 
     void setMessageHandler(MessageHandler messageHandler);
 

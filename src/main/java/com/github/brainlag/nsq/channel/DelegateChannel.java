@@ -15,13 +15,18 @@ public class DelegateChannel implements Channel {
     }
 
     @Override
-    public Config getConfig() {
-        return delegate.getConfig();
+    public int getReady() {
+        return this.delegate.getReady();
     }
 
     @Override
-    public int getLeftMessages() {
-        return delegate.getLeftMessages();
+    public int getInFlight() {
+        return this.delegate.getInFlight();
+    }
+
+    @Override
+    public Config getConfig() {
+        return delegate.getConfig();
     }
 
     @Override
@@ -60,7 +65,27 @@ public class DelegateChannel implements Channel {
     }
 
     @Override
+    public void sendRequeue(byte[] messageId) throws NSQException {
+        this.delegate.sendRequeue(messageId);
+    }
+
+    @Override
     public void sendRequeue(byte[] messageId, long timeoutMS) {
         delegate.sendRequeue(messageId, timeoutMS);
+    }
+
+    @Override
+    public void sendFinish(byte[] messageId) throws NSQException {
+        this.delegate.sendFinish(messageId);
+    }
+
+    @Override
+    public void sendTouch(byte[] messageId) throws NSQException {
+        this.delegate.sendTouch(messageId);
+    }
+
+    @Override
+    public Response sendSubscribe(String topic, String channel) throws NSQException {
+        return this.delegate.sendSubscribe(topic, channel);
     }
 }
