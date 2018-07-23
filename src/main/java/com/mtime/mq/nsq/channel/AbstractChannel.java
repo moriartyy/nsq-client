@@ -189,7 +189,7 @@ public abstract class AbstractChannel implements Channel {
         try {
             this.messageHandler.process(toMessage(message));
         } catch (Exception e) {
-            LOGGER.error("Process message failed", e);
+            LOGGER.error("Process message failed, id={}", new String(message.getMessageId()), e);
         }
     }
 

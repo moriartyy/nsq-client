@@ -17,6 +17,9 @@ import java.util.concurrent.*;
 
 import static com.mtime.mq.nsq.ConsumerConfig.MAX_IN_FLIGHT_ADAPTIVE;
 
+/**
+ * TODO subscribe multi topics
+ */
 public class Consumer implements Closeable {
     protected static final Logger LOGGER = LogManager.getLogger(Consumer.class);
 
@@ -53,10 +56,14 @@ public class Consumer implements Closeable {
             this.maxInFlight = config.getMaxInFlight();
         }
 
-        this.maintenanceChannels();
+        this.initChannels();
 
         this.scheduler.scheduleAtFixedRate(this::maintenanceChannels,
                 this.config.getLookupPeriodMills(), this.config.getLookupPeriodMills(), TimeUnit.MILLISECONDS);
+    }
+
+    private void initChannels() {
+        updateChannelsByLookup();
     }
 
     private void validateConfig(ConsumerConfig config) {
@@ -66,15 +73,26 @@ public class Consumer implements Closeable {
     }
 
     private void maintenanceChannels() {
-        removeDisconnectedChannels();
-        updateChannelsByLookup();
+        try {
+            removeDisconnectedChannels();
+            updateChannelsByLookup();
+        } catch (Exception e) {
+            LOGGER.error("Maintenance channel failed", e);
+        }
     }
 
     private void updateChannelsReadyCounts() {
         int newRdy = this.maxInFlight / this.channels.size();
         if (newRdy != this.channelReadyCount) {
             this.channelReadyCount = newRdy;
-            this.channels.values().forEach(c -> c.sendReady(this.channelReadyCount));
+            this.channels.values().forEach(c -> {
+                try {
+                    c.sendReady(this.channelReadyCount);
+                } catch (NSQException e) {
+                    closeQuietly(c);
+                    LOGGER.error("Exception caught while sending read to channel(address={})", c.getRemoteServerAddress(), e);
+                }
+            });
         }
     }
 
@@ -93,36 +111,42 @@ public class Consumer implements Closeable {
     }
 
     private void connectToNewServers(Set<ServerAddress> found) {
-        found.forEach(s -> this.channels.computeIfAbsent(s, this::createChannel));
+        found.forEach(s -> {
+            if (!channels.containsKey(s)) {
+                try {
+                    channels.put(s, createChannel(s));
+                } catch (Exception e) {
+                    LOGGER.error("Failed to create channel from address {}", s, e);
+                }
+            }
+        });
     }
 
     private void removeObsoletedChannels(Set<ServerAddress> found) {
         this.channels.forEach((s, c) -> {
             if (!found.contains(s)) {
-                try {
-                    c.close();
-                } catch (Exception e) {
-                    LOGGER.error("Exception caught while closing channel, address: {}", c.getRemoteServerAddress(), e);
-                }
+                closeQuietly(c);
                 this.channels.remove(s);
             }
         });
     }
 
-    private Channel createChannel(final ServerAddress serverAddress) {
+    private void closeQuietly(Channel c) {
         try {
-            Channel channel = NettyChannel.instance(serverAddress, config);
-            channel.setMessageHandler(this::processMessage);
-            Response response = channel.sendSubscribe(this.config.getTopic(), this.config.getChannel());
-            if (response.getStatus() == Response.Status.ERROR) {
-                throw new NSQException("Subscribe failed reason: " + response.getMessage());
-            }
-            channel.sendReady(1);
-            return channel;
-        } catch (final Exception e) {
-            LOGGER.warn("Could not create connection to server {}", serverAddress.toString(), e);
-            return null;
+            c.close();
+        } catch (Exception e) {
+            LOGGER.error("Exception caught while closing channel, address: {}", c.getRemoteServerAddress(), e);
         }
+    }
+
+    private Channel createChannel(final ServerAddress serverAddress) {
+        Channel channel = NettyChannel.instance(serverAddress, config);
+        channel.setMessageHandler(this::processMessage);
+        Response response = channel.sendSubscribe(this.config.getTopic(), this.config.getChannel());
+        if (response.getStatus() == Response.Status.ERROR) {
+            throw new NSQException("Subscribe failed reason: " + response.getMessage());
+        }
+        return channel;
     }
 
     private void processMessage(final Message message) {
@@ -136,17 +160,18 @@ public class Consumer implements Closeable {
         }
 
         this.executor.execute(() -> {
-            this.messageHandler.process(message);
+            try {
+                this.messageHandler.process(message);
+            } catch (Exception e) {
+                LOGGER.error("Process message failed, id={}, topic={}, channel={}",
+                        new String(message.getId()), this.config.getTopic(), this.config.getChannel(), e);
+            }
         });
     }
 
     private void cleanClose() {
         for (final Channel channel : channels.values()) {
-            try {
-                channel.close();
-            } catch (Exception e) {
-                LOGGER.warn("No clean disconnect {}", channel.getRemoteServerAddress(), e);
-            }
+            closeQuietly(channel);
         }
     }
 
