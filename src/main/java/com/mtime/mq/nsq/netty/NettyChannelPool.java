@@ -24,7 +24,7 @@ public class NettyChannelPool implements ChannelPool {
         this.serverAddress = serverAddress;
         this.config = config;
         this.channelPool = new FixedChannelPool(
-                NettyHelper.createBootstrap(serverAddress),
+                NettyHelper.createBootstrap(serverAddress, config.getSocketThreads()),
                 new NettyChannelPoolHandler(),
                 ChannelHealthChecker.ACTIVE,
                 FixedChannelPool.AcquireTimeoutAction.FAIL, config.getConnectionTimeoutMillis(),
@@ -44,7 +44,6 @@ public class NettyChannelPool implements ChannelPool {
         if (channel.hasAttr(NettyChannel.CHANNEL_KEY)) {
             return channel.attr(NettyChannel.CHANNEL_KEY).get();
         }
-
         return createChannel(channel);
     }
 

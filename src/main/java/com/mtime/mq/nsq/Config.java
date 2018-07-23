@@ -29,6 +29,7 @@ public class Config {
 
     private static String DEFAULT_CLIENT_ID;
     private static String DEFAULT_HOST_NAME;
+    public static final int DEFAULT_SOCKET_THREADS = Runtime.getRuntime().availableProcessors();
 
     public static final int DISABLE_SAMPLE_RATE = 0;
     public static final long LOOKUP_PERIOD_NEVER = 0L;
@@ -50,5 +51,6 @@ public class Config {
     private SslContext sslContext = null;
     private Lookup lookup;
     private long lookupPeriodMills = LOOKUP_PERIOD_NEVER;
+    private int socketThreads = DEFAULT_SOCKET_THREADS;
 
 }

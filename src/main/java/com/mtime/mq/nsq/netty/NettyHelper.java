@@ -43,8 +43,8 @@ public class NettyHelper {
         pipeline.addLast("NSQHandler", new NettyHandler()); // in
     }
 
-    public static Channel openChannel(ServerAddress serverAddress) {
-        Bootstrap bootstrap = createBootstrap(serverAddress);
+    public static Channel openChannel(ServerAddress serverAddress, int socketThreads) {
+        Bootstrap bootstrap = createBootstrap(serverAddress, socketThreads);
         ChannelFuture future = bootstrap.connect();
         future.awaitUninterruptibly();
         if (!future.isSuccess()) {
