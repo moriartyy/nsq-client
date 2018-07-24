@@ -8,9 +8,9 @@ import java.io.Closeable;
 /**
  * @author hongmiao.yu
  */
-public class Closeables {
+public class CloseableUtils {
 
-    protected static final Logger LOGGER = LogManager.getLogger(Closeables.class);
+    protected static final Logger LOGGER = LogManager.getLogger(CloseableUtils.class);
 
     public static void closeQuietly(Closeable c) {
         try {

@@ -1,7 +1,6 @@
 package com.mtime.mq.nsq;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import com.mtime.mq.nsq.support.ExecutorUtils;
 
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -20,7 +19,6 @@ public interface Executor {
     void shutdown();
 
     class DefaultExecutorImpl implements Executor {
-        private static final Logger LOGGER = LogManager.getLogger(DefaultExecutorImpl.class);
         private static final int DEFAULT_THREADS = Runtime.getRuntime().availableProcessors() * 2;
         private final ThreadPoolExecutor executor;
         private final int threads;
@@ -50,20 +48,8 @@ public interface Executor {
         @Override
         public void shutdown() {
             // waiting messages to be processed
-            try {
-                shutdownAndWaitTermination();
-            } catch (InterruptedException e) {
-                LOGGER.warn("Shutdown process was interrupted");
-            }
+            ExecutorUtils.shutdownGracefully(this.executor);
         }
 
-        private void shutdownAndWaitTermination() throws InterruptedException {
-            this.executor.shutdown();
-            if (!this.executor.awaitTermination(5L, TimeUnit.SECONDS)) {
-                LOGGER.warn("Shutdown process did not completed in time");
-                this.executor.getQueue().clear();
-                this.executor.shutdownNow();
-            }
-        }
     }
 }

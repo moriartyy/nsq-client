@@ -5,7 +5,7 @@ import com.mtime.mq.nsq.channel.ChannelPool;
 import com.mtime.mq.nsq.exceptions.NSQException;
 import com.mtime.mq.nsq.exceptions.NoConnectionsException;
 import com.mtime.mq.nsq.netty.NettyChannelPool;
-import com.mtime.mq.nsq.support.Closeables;
+import com.mtime.mq.nsq.support.CloseableUtils;
 import com.mtime.mq.nsq.support.DaemonThreadFactory;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -144,7 +144,7 @@ public class Producer implements Closeable {
     }
 
     private void closePools() {
-        clientPools.values().forEach(Closeables::closeQuietly);
+        clientPools.values().forEach(CloseableUtils::closeQuietly);
     }
 
     private void waitPendingCommandsToBeCompleted() {

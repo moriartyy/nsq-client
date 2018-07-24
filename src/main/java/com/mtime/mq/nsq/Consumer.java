@@ -3,7 +3,7 @@ package com.mtime.mq.nsq;
 import com.mtime.mq.nsq.channel.Channel;
 import com.mtime.mq.nsq.exceptions.NSQException;
 import com.mtime.mq.nsq.netty.NettyChannel;
-import com.mtime.mq.nsq.support.Closeables;
+import com.mtime.mq.nsq.support.CloseableUtils;
 import com.mtime.mq.nsq.support.DaemonThreadFactory;
 import lombok.Builder;
 import lombok.EqualsAndHashCode;
@@ -97,7 +97,7 @@ public class Consumer implements Closeable {
                     try {
                         c.sendReady(newReadyCount);
                     } catch (NSQException e) {
-                        Closeables.closeQuietly(c);
+                        CloseableUtils.closeQuietly(c);
                         LOGGER.error("Exception caught while sending read to channel(address={})", c.getRemoteAddress(), e);
                     }
                 });
@@ -135,7 +135,7 @@ public class Consumer implements Closeable {
         while (iterator.hasNext()) {
             Channel c = iterator.next();
             if (!addresses.contains(c.getRemoteAddress())) {
-                Closeables.closeQuietly(c);
+                CloseableUtils.closeQuietly(c);
                 iterator.remove();
             }
         }
@@ -166,7 +166,7 @@ public class Consumer implements Closeable {
             subscription.getExecutor().shutdown();
 
             // close channel
-            channels.forEach(Closeables::closeQuietly);
+            channels.forEach(CloseableUtils::closeQuietly);
         });
     }
 
