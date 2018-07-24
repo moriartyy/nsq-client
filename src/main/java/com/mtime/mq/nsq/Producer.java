@@ -5,6 +5,7 @@ import com.mtime.mq.nsq.channel.ChannelPool;
 import com.mtime.mq.nsq.exceptions.NSQException;
 import com.mtime.mq.nsq.exceptions.NoConnectionsException;
 import com.mtime.mq.nsq.netty.NettyChannelPool;
+import com.mtime.mq.nsq.support.Closeables;
 import com.mtime.mq.nsq.support.DaemonThreadFactory;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -16,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class Producer implements Closeable {
@@ -23,17 +25,14 @@ public class Producer implements Closeable {
     private static final Logger LOGGER = LogManager.getLogger(Producer.class);
 
     private static final int MAX_CONNECTION_RETRIES = 3;
-    /**
-     * nsqd servers
-     * <p>
-     * use topic as key, for different topic may use independent servers.
-     * </P>
-     */
-    private Map<String, ServerAddress[]> servers = new ConcurrentHashMap<>();
-    private Map<String, AtomicInteger> topicServerRoundRobinCounts = new ConcurrentHashMap<>();
-    private ProducerConfig config;
+
+    private final Map<String /*topic*/, ServerAddress[]> addresses = new ConcurrentHashMap<>();
+    private final Map<String /*topic*/, AtomicInteger> roundRobinCounts = new ConcurrentHashMap<>();
+    private final ProducerConfig config;
     private final Map<ServerAddress, ChannelPool> clientPools = new ConcurrentHashMap<>();
-    private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(DaemonThreadFactory.create("nsqProducerScheduler"));
+    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(DaemonThreadFactory.create("nsqProducerScheduler"));
+    private final AtomicBoolean running = new AtomicBoolean(true);
+    private final AtomicInteger pendingCommands = new AtomicInteger(0);
 
     public Producer(ProducerConfig config) {
         this.config = config;
@@ -47,10 +46,10 @@ public class Producer implements Closeable {
 
     private void updateServers() {
         try {
-            this.servers.keySet().forEach(topic -> {
-                ServerAddress[] addresses = lookupServers(topic);
+            this.addresses.keySet().forEach(topic -> {
+                ServerAddress[] addresses = lookupServerAddresses(topic);
                 if (addresses.length > 0) {
-                    this.servers.put(topic, addresses);
+                    this.addresses.put(topic, addresses);
                 }
             });
         } catch (Exception e) {
@@ -58,88 +57,104 @@ public class Producer implements Closeable {
         }
     }
 
-    private ServerAddress[] lookupServers(String topic) {
+    private ServerAddress[] lookupServerAddresses(String topic) {
         return config.getLookup().lookup(topic).toArray(new ServerAddress[0]);
     }
 
     private Channel acquireChannel(String topic) throws NoConnectionsException {
         int retries = 0;
-        while (retries < MAX_CONNECTION_RETRIES) {
+        while (running.get() && retries < MAX_CONNECTION_RETRIES) {
             try {
-                ServerAddress serverAddress = nextAddress(topic);
-                return acquireChannel(serverAddress);
+                ServerAddress address = nextAddress(topic);
+                return acquireChannel(address);
             } catch (Exception ex) {
                 LOGGER.error("Acquire channel for topic {} failed", topic, ex);
             }
             retries++;
         }
-        throw new NoConnectionsException("Could not acquire a connection from pool after try" + MAX_CONNECTION_RETRIES + " times.");
+        throw new NoConnectionsException("Could not acquire a connection from pool after try " + MAX_CONNECTION_RETRIES + " times.");
     }
 
-    private Channel acquireChannel(ServerAddress serverAddress) {
-        ChannelPool pool = getPool(serverAddress);
+    private Channel acquireChannel(ServerAddress address) {
+        ChannelPool pool = getPool(address);
         return pool.acquire();
     }
 
-    private ChannelPool getPool(ServerAddress serverAddress) {
-        return clientPools.computeIfAbsent(serverAddress,
-                s -> new NettyChannelPool(s, this.config));
+    private ChannelPool getPool(ServerAddress address) {
+        return clientPools.computeIfAbsent(address, a -> new NettyChannelPool(a, this.config));
     }
 
     private ServerAddress nextAddress(String topic) {
-        ServerAddress[] serversForTopic = servers.computeIfAbsent(topic, this::lookupServers);
-        if (serversForTopic.length == 0) {
+        ServerAddress[] addressesOfTopic = addresses.computeIfAbsent(topic, this::lookupServerAddresses);
+        if (addressesOfTopic.length == 0) {
             throw new IllegalStateException("No server configured for topic " + topic);
         }
-        AtomicInteger roundRobinCountForTopic = topicServerRoundRobinCounts.computeIfAbsent(topic, t -> new AtomicInteger());
-        return serversForTopic[roundRobinCountForTopic.getAndIncrement() % serversForTopic.length];
+        AtomicInteger roundRobinCountForTopic = roundRobinCounts.computeIfAbsent(topic, t -> new AtomicInteger());
+        return addressesOfTopic[roundRobinCountForTopic.getAndIncrement() % addressesOfTopic.length];
     }
 
-    /**
-     * produce multiple messages.
-     */
-    public void produceMulti(String topic, List<byte[]> messages) throws NSQException {
+    public void multiPublish(String topic, List<byte[]> messages) throws NSQException {
         if (messages == null || messages.isEmpty()) {
             return;
         }
 
         if (messages.size() == 1) {
             //encoding will be screwed up if we MPUB a
-            this.produce(topic, messages.get(0));
+            this.publish(topic, messages.get(0));
             return;
         }
 
         sendCommand(topic, Command.multiPublish(topic, messages));
     }
 
-    public void produce(String topic, byte[] message) throws NSQException {
+    public void publish(String topic, byte[] message) throws NSQException {
         sendCommand(topic, Command.publish(topic, message));
     }
 
-    public void produceDeferred(String topic, byte[] message, int deferMillis) throws NSQException {
+    public void deferredPublish(String topic, byte[] message, int deferMillis) throws NSQException {
         sendCommand(topic, Command.deferredPublish(topic, message, deferMillis));
     }
 
     private void sendCommand(String topic, Command command) throws NSQException {
+        checkRunningState();
+        pendingCommands.incrementAndGet();
         Channel channel = acquireChannel(topic);
         try {
-            channel.sendAndWait(command);
-        } catch (Exception e) {
-            throw new NSQException("Execute command failed", e);
+            Response response = channel.sendAndWait(command);
+            if (response.getStatus() == Response.Status.ERROR) {
+                throw new NSQException("Publish failed, reason: " + response.getMessage());
+            }
         } finally {
-            getPool(channel.getRemoteServerAddress()).release(channel);
+            pendingCommands.decrementAndGet();
+            getPool(channel.getRemoteAddress()).release(channel);
+        }
+    }
+
+    private void checkRunningState() {
+        if (!running.get()) {
+            throw new NSQException("Producer is closed");
         }
     }
 
     public void close() {
-        clientPools.forEach((s, pool) -> {
+        running.set(false);
+        scheduler.shutdownNow();
+        waitPendingCommandsToBeCompleted();
+        closePools();
+    }
+
+    private void closePools() {
+        clientPools.values().forEach(Closeables::closeQuietly);
+    }
+
+    private void waitPendingCommandsToBeCompleted() {
+        long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(5L);
+        while (pendingCommands.get() > 0 && System.currentTimeMillis() < deadline) {
             try {
-                pool.close();
-            } catch (Exception e) {
-                LOGGER.error("Caught exception while close pool", e);
+                Thread.sleep(10L);
+            } catch (InterruptedException e) {
+                break;
             }
-        });
-        clientPools.clear();
-        scheduler.shutdown();
+        }
     }
 }

@@ -1,9 +1,11 @@
 package com.mtime.mq.nsq.channel;
 
+import java.io.Closeable;
+
 /**
  * @author walter
  */
-public interface ChannelPool {
+public interface ChannelPool extends Closeable {
 
     Channel acquire();
 
@@ -13,19 +15,4 @@ public interface ChannelPool {
 
     void close();
 
-
-    class PooledChannel extends DelegateChannel {
-
-        private final ChannelPool pool;
-
-        public PooledChannel(Channel delegate, ChannelPool pool) {
-            super(delegate);
-            this.pool = pool;
-        }
-
-        @Override
-        public void close() {
-            this.pool.release(this);
-        }
-    }
 }

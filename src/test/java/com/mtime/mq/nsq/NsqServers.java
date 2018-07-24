@@ -1,5 +1,6 @@
 package com.mtime.mq.nsq;
 
+import com.mtime.mq.nsq.lookup.FixedLookup;
 import com.mtime.mq.nsq.lookup.Lookup;
 
 import java.util.HashSet;
@@ -24,8 +25,8 @@ public class NsqServers {
         PRODUCE_SERVERS.add(new ServerAddress("192.168.55.142", 4150));
     }
 
-    public static Lookup SUBSCRIBE_LOOKUP = Lookup.fixed(PRODUCE_SERVERS);
+    public static Lookup SUBSCRIBE_LOOKUP = FixedLookup.wrap(PRODUCE_SERVERS);
 
-    public static Lookup PRODUCE_LOOKUP = Lookup.fixed(PRODUCE_SERVERS);
+    public static Lookup PRODUCE_LOOKUP = FixedLookup.wrap(PRODUCE_SERVERS);
 
 }

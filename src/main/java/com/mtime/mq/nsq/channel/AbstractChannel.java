@@ -55,25 +55,9 @@ public abstract class AbstractChannel implements Channel {
     }
 
     @Override
-    public ServerAddress getRemoteServerAddress() {
+    public ServerAddress getRemoteAddress() {
         return serverAddress;
     }
-
-    @Override
-    public void close() {
-        try {
-            Response response = sendAndWait(Command.startClose());
-            if (response.getStatus() != Response.Status.OK) {
-                LOGGER.warn("Received error response: {}", response.getMessage());
-            }
-        } catch (Exception e) {
-            LOGGER.warn("Caught exception when close client", e);
-        } finally {
-            this.doClose();
-        }
-    }
-
-    protected abstract void doClose();
 
     @Override
     public boolean isConnected() {
@@ -122,34 +106,24 @@ public abstract class AbstractChannel implements Channel {
     @Override
     public void sendReady(int count) throws NSQException {
         this.ready = count;
-        send(Command.ready(count));
+        Channel.super.sendReady(count);
     }
 
     @Override
     public void sendRequeue(byte[] messageId) throws NSQException {
-        sendRequeue(messageId, 0L);
+        Channel.super.sendRequeue(messageId);
     }
 
     @Override
     public void sendRequeue(byte[] messageId, long timeoutMS) throws NSQException {
-        send(Command.requeue(messageId, timeoutMS));
+        Channel.super.sendRequeue(messageId, timeoutMS);
         this.inFlight.getAndDecrement();
     }
 
     @Override
     public void sendFinish(byte[] messageId) throws NSQException {
-        send(Command.finish(messageId));
+        Channel.super.sendFinish(messageId);
         this.inFlight.getAndDecrement();
-    }
-
-    @Override
-    public void sendTouch(byte[] messageId) throws NSQException {
-        send(Command.touch(messageId));
-    }
-
-    @Override
-    public Response sendSubscribe(String topic, String channel) throws NSQException {
-        return sendAndWait(Command.subscribe(topic, channel));
     }
 
     public void receive(Frame frame) {

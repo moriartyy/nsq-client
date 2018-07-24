@@ -3,10 +3,12 @@ package com.mtime.mq.nsq.channel;
 import com.mtime.mq.nsq.*;
 import com.mtime.mq.nsq.exceptions.NSQException;
 
+import java.io.Closeable;
+
 /**
  * @author hongmiao.yu
  */
-public interface Channel {
+public interface Channel extends Closeable {
 
     int getReadyCount();
 
@@ -16,7 +18,7 @@ public interface Channel {
 
     void setMessageHandler(MessageHandler messageHandler);
 
-    ServerAddress getRemoteServerAddress();
+    ServerAddress getRemoteAddress();
 
     void send(Command command) throws NSQException;
 
@@ -26,15 +28,31 @@ public interface Channel {
 
     boolean isConnected();
 
-    void sendReady(int count) throws NSQException;
+    default void sendReady(int count) throws NSQException {
+        send(Command.ready(count));
+    }
 
-    void sendRequeue(byte[] messageId) throws NSQException;
+    default void sendRequeue(byte[] messageId) throws NSQException {
+        sendRequeue(messageId, 0L);
+    }
 
-    void sendRequeue(byte[] messageId, long timeoutMS) throws NSQException;
+    default void sendRequeue(byte[] messageId, long timeoutMS) throws NSQException {
+        send(Command.requeue(messageId, timeoutMS));
+    }
 
-    void sendFinish(byte[] messageId) throws NSQException;
+    default void sendFinish(byte[] messageId) throws NSQException {
+        send(Command.finish(messageId));
+    }
 
-    void sendTouch(byte[] messageId) throws NSQException;
+    default void sendTouch(byte[] messageId) throws NSQException {
+        send(Command.touch(messageId));
+    }
 
-    Response sendSubscribe(String topic, String channel) throws NSQException;
+    default Response sendSubscribe(String topic, String channel) throws NSQException {
+        return sendAndWait(Command.subscribe(topic, channel));
+    }
+
+    default Response sendClose() {
+        return sendAndWait(Command.startClose());
+    }
 }

@@ -51,7 +51,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
     }
 
     @Override
-    protected void doClose() {
+    public void close() {
         this.channel.close();
     }
 
