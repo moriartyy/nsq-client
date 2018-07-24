@@ -154,7 +154,7 @@ public class Consumer implements Closeable {
     private void closeSubscriptions() {
         this.subscriptions.forEach((subscription, channels) -> {
 
-            // Clean close channel
+            // send "CLS" to nsq, so nsq will stop pushing messages
             channels.forEach(channel -> {
                 Response response = channel.sendClose();
                 if (response.getStatus() == Response.Status.ERROR) {
@@ -165,7 +165,7 @@ public class Consumer implements Closeable {
             // waiting for received messages to be processed
             subscription.getExecutor().shutdown();
 
-            // close channel
+            // close channels
             channels.forEach(CloseableUtils::closeQuietly);
         });
     }
