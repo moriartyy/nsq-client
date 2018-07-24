@@ -62,6 +62,11 @@ public class Consumer implements Closeable {
                 .executor(executor == null ? getDefaultExecutor() : executor)
                 .maxInFlight(maxInFlight)
                 .build();
+
+        if (subscriptions.containsKey(subscription)) {
+            throw new NSQException("Subscription(topic=" + topic + ", channel=" + channel + ") already exist");
+        }
+
         this.initChannels(subscription);
     }
 
