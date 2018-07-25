@@ -9,16 +9,15 @@ import io.netty.handler.codec.compression.SnappyFrameEncoder;
 import io.netty.handler.codec.compression.ZlibCodecFactory;
 import io.netty.handler.codec.compression.ZlibWrapper;
 import io.netty.handler.ssl.SslHandler;
+import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.frames.Frame;
 import mtime.mq.nsq.frames.ResponseFrame;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import javax.net.ssl.SSLEngine;
 
+@Slf4j
 public class NettyFeatureDetectionHandler extends SimpleChannelInboundHandler<Frame> {
-    protected static final Logger LOGGER = LogManager.getLogger(NettyFeatureDetectionHandler.class);
 
     private boolean ssl;
     private boolean compression;
@@ -28,7 +27,7 @@ public class NettyFeatureDetectionHandler extends SimpleChannelInboundHandler<Fr
 
     @Override
     protected void channelRead0(final ChannelHandlerContext ctx, final Frame msg) throws Exception {
-        LOGGER.info("IdentifyResponse: " + new String(msg.getData()));
+        log.info("IdentifyResponse: " + new String(msg.getData()));
         boolean reinstallDefaultDecoder = true;
         if (msg instanceof ResponseFrame) {
             ResponseFrame response = (ResponseFrame) msg;
@@ -54,7 +53,7 @@ public class NettyFeatureDetectionHandler extends SimpleChannelInboundHandler<Fr
                 return;
             }
             if (ssl) {
-                LOGGER.info("Adding SSL to pipline");
+                log.info("Adding SSL to pipline");
                 SSLEngine sslEngine = channel.getConfig().getSslContext().newEngine(ctx.channel().alloc());
                 sslEngine.setUseClientMode(true);
                 SslHandler sslHandler = new SslHandler(sslEngine, false);
@@ -88,7 +87,7 @@ public class NettyFeatureDetectionHandler extends SimpleChannelInboundHandler<Fr
         // ok we read only the the first message to set up the pipline, ejecting now!
         pipeline.remove(this);
         if (reinstallDefaultDecoder) {
-            LOGGER.info("reinstall LengthFieldBasedFrameDecoder");
+            log.info("reinstall LengthFieldBasedFrameDecoder");
             pipeline.replace("LengthFieldBasedFrameDecoder", "LengthFieldBasedFrameDecoder",
                     new LengthFieldBasedFrameDecoder(Integer.MAX_VALUE, 0, Integer.BYTES));
         }
@@ -96,14 +95,14 @@ public class NettyFeatureDetectionHandler extends SimpleChannelInboundHandler<Fr
 
     private boolean installDeflateDecoder(final ChannelPipeline pipeline) {
         finished = true;
-        LOGGER.info("Adding deflate to pipline");
+        log.info("Adding deflate to pipline");
         pipeline.replace("LengthFieldBasedFrameDecoder", "DeflateDecoder", ZlibCodecFactory.newZlibDecoder(ZlibWrapper.NONE));
         return false;
     }
 
     private boolean installSnappyDecoder(final ChannelPipeline pipeline) {
         finished = true;
-        LOGGER.info("Adding snappy to pipline");
+        log.info("Adding snappy to pipline");
         pipeline.replace("LengthFieldBasedFrameDecoder", "SnappyDecoder", new SnappyFrameDecoder());
         return false;
     }

@@ -1,5 +1,6 @@
 package mtime.mq.nsq;
 
+import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.channel.ChannelPool;
 import mtime.mq.nsq.exceptions.NSQException;
@@ -7,8 +8,6 @@ import mtime.mq.nsq.exceptions.NoConnectionsException;
 import mtime.mq.nsq.netty.NettyChannelPool;
 import mtime.mq.nsq.support.CloseableUtils;
 import mtime.mq.nsq.support.DaemonThreadFactory;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import java.io.Closeable;
 import java.util.List;
@@ -20,9 +19,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+@Slf4j
 public class Producer implements Closeable {
-
-    private static final Logger LOGGER = LogManager.getLogger(Producer.class);
 
     private static final int MAX_CONNECTION_RETRIES = 3;
 
@@ -53,7 +51,7 @@ public class Producer implements Closeable {
                 }
             });
         } catch (Exception e) {
-            LOGGER.error("update servers failed", e);
+            log.error("update servers failed", e);
         }
     }
 
@@ -68,7 +66,7 @@ public class Producer implements Closeable {
                 ServerAddress address = nextAddress(topic);
                 return acquireChannel(address);
             } catch (Exception ex) {
-                LOGGER.error("Acquire channel for topic {} failed", topic, ex);
+                log.error("Acquire channel for topic {} failed", topic, ex);
             }
             retries++;
         }

@@ -2,9 +2,8 @@ package mtime.mq.nsq.lookup;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.ServerAddress;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 import java.net.URL;
@@ -15,8 +14,8 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentSkipListSet;
 
+@Slf4j
 public class HttpLookup implements Lookup {
-    protected static final Logger LOGGER = LogManager.getLogger(HttpLookup.class);
 
     private final Set<String> lookupServerAddresses = new ConcurrentSkipListSet<>();
     private final ObjectMapper mapper;
@@ -43,7 +42,7 @@ public class HttpLookup implements Lookup {
             try {
                 String topicEncoded = URLEncoder.encode(topic, StandardCharsets.UTF_8.name());
                 JsonNode jsonNode = mapper.readTree(new URL(lookupServerAddress + "/lookup?topic=" + topicEncoded));
-                LOGGER.debug("Server connection information: {}", jsonNode);
+                log.debug("Server connection information: {}", jsonNode);
                 JsonNode producers = jsonNode.findValue("producers");
                 for (JsonNode node : producers) {
                     String host = node.get("broadcast_address").asText();
@@ -51,12 +50,12 @@ public class HttpLookup implements Lookup {
                     addresses.add(address);
                 }
             } catch (IOException e) {
-                LOGGER.warn("Unable to connect to address {} for topic {}", lookupServerAddress, topic, e);
+                log.warn("Unable to connect to address {} for topic {}", lookupServerAddress, topic, e);
             }
         }
 
         if (addresses.isEmpty()) {
-            LOGGER.warn("Unable to connect to any NSQ Lookup servers, servers tried: {} on topic: {}", this.lookupServerAddresses, topic);
+            log.warn("Unable to connect to any NSQ Lookup servers, servers tried: {} on topic: {}", this.lookupServerAddresses, topic);
         }
         return addresses;
     }

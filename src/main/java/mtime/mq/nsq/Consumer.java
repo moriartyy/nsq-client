@@ -4,23 +4,19 @@ import lombok.Builder;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.exceptions.NSQException;
 import mtime.mq.nsq.netty.NettyChannel;
 import mtime.mq.nsq.support.CloseableUtils;
 import mtime.mq.nsq.support.DaemonThreadFactory;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import java.io.Closeable;
 import java.util.*;
 import java.util.concurrent.*;
 
-/**
- * TODO subscribe multi topics
- */
+@Slf4j
 public class Consumer implements Closeable {
-    protected static final Logger LOGGER = LogManager.getLogger(Consumer.class);
 
     private final ConsumerConfig config;
     private final Map<Subscription, List<Channel>> subscriptions = new ConcurrentHashMap<>();
@@ -86,7 +82,7 @@ public class Consumer implements Closeable {
                 removeDisconnectedChannels(channels);
                 updateChannelsByLookup(subscription, channels);
             } catch (Exception e) {
-                LOGGER.error("Exception caught while maintenance subscription(topic={}, channel={})",
+                log.error("Exception caught while maintenance subscription(topic={}, channel={})",
                         subscription.getTopic(), subscription.getChannel(), e);
             }
         });
@@ -100,7 +96,7 @@ public class Consumer implements Closeable {
                         c.sendReady(newReadyCount);
                     } catch (NSQException e) {
                         CloseableUtils.closeQuietly(c);
-                        LOGGER.error("Exception caught while sending read to channel(address={})", c.getRemoteAddress(), e);
+                        log.error("Exception caught while sending read to channel(address={})", c.getRemoteAddress(), e);
                     }
                 });
     }
@@ -127,7 +123,7 @@ public class Consumer implements Closeable {
             try {
                 channels.add(createChannel(subscription, s));
             } catch (Exception e) {
-                LOGGER.error("Failed to create channel from address {}", s, e);
+                log.error("Failed to create channel from address {}", s, e);
             }
         });
     }
@@ -160,7 +156,7 @@ public class Consumer implements Closeable {
             channels.forEach(channel -> {
                 Response response = channel.sendClose();
                 if (response.getStatus() == Response.Status.ERROR) {
-                    LOGGER.error("Clean close failed, reason: {}", response.getMessage());
+                    log.error("Clean close failed, reason: {}", response.getMessage());
                 }
             });
 
@@ -256,7 +252,7 @@ public class Consumer implements Closeable {
                 try {
                     this.handler.process(message);
                 } catch (Exception e) {
-                    LOGGER.error("Process message failed, id={}, topic={}, channel={}",
+                    log.error("Process message failed, id={}, topic={}, channel={}",
                             new String(message.getId()), this.topic, this.channel, e);
                 }
             });

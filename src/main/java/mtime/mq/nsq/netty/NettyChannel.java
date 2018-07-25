@@ -2,22 +2,21 @@ package mtime.mq.nsq.netty;
 
 import io.netty.buffer.Unpooled;
 import io.netty.util.AttributeKey;
+import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.Command;
 import mtime.mq.nsq.Config;
 import mtime.mq.nsq.ServerAddress;
 import mtime.mq.nsq.channel.AbstractChannel;
 import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.exceptions.NSQException;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * @author hongmiao.yu
  */
+@Slf4j
 public class NettyChannel extends AbstractChannel implements Channel {
-    private static final Logger LOGGER = LogManager.getLogger(NettyChannel.class);
     static final AttributeKey<NettyChannel> CHANNEL_KEY = AttributeKey.newInstance("nettyChannel");
     private static final AtomicLong instanceCount = new AtomicLong();
 
@@ -36,7 +35,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
         } catch (Exception e) {
             throw new NSQException("identify failed", e);
         }
-        LOGGER.info("NettyChannel created, total: {}", instanceCount.incrementAndGet());
+        log.info("NettyChannel created, total: {}", instanceCount.incrementAndGet());
         return nettyChannel;
     }
 

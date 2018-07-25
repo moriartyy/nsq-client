@@ -1,17 +1,17 @@
 package mtime.mq.nsq;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import lombok.extern.slf4j.Slf4j;
 import org.junit.Test;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
  * @author hongmiao.yu
  */
+@Slf4j
 public class ConsumerTest {
-    private static final Logger LOGGER = LogManager.getLogger(ConsumerTest.class);
     private static String topic = "nsq_client_test";
     private static String channel = "nsq_client_test_channel";
     private static MessageHandler messagePrinter = m -> {
@@ -50,8 +50,8 @@ public class ConsumerTest {
             System.out.println();
         }, 1, 1, TimeUnit.SECONDS);
 
-//        CountDownLatch keepAlive = new CountDownLatch(1);
-//        keepAlive.await();
+        CountDownLatch keepAlive = new CountDownLatch(1);
+        keepAlive.await();
     }
 
     private static Consumer createConsumer() {
@@ -62,11 +62,4 @@ public class ConsumerTest {
         return new Consumer(config);
     }
 
-    public static void main(String[] args) throws InterruptedException {
-        Consumer consumer = createConsumer();
-        consumer.subscribe(topic, channel, messagePrinter);
-        System.out.println("hello");
-        Thread.sleep(2000);
-        consumer.close();
-    }
 }

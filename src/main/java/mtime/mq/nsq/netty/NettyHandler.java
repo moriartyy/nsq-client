@@ -2,18 +2,16 @@ package mtime.mq.nsq.netty;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
+import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.frames.Frame;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
-
+@Slf4j
 public class NettyHandler extends SimpleChannelInboundHandler<Frame> {
-    protected static final Logger LOGGER = LogManager.getLogger(NettyHandler.class);
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
 //        super.exceptionCaught(ctx, cause);
-        LOGGER.error("NSQHandler exception caught", cause);
+        log.error("NSQHandler exception caught", cause);
         ctx.channel().close();
     }
 

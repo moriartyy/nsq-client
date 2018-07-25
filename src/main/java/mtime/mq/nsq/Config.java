@@ -3,17 +3,16 @@ package mtime.mq.nsq;
 import io.netty.handler.ssl.SslContext;
 import lombok.Getter;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.lookup.Lookup;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 
+@Slf4j
 @Getter
 @Setter
 public class Config {
-    protected static final Logger LOGGER = LogManager.getLogger(Config.class);
 
     static {
         try {
@@ -21,7 +20,7 @@ public class Config {
             DEFAULT_CLIENT_ID = localhost.getHostName();
             DEFAULT_HOST_NAME = localhost.getCanonicalHostName();
         } catch (UnknownHostException e) {
-            LOGGER.warn("Local host name could not resolved", e);
+            log.warn("Local host name could not resolved", e);
             DEFAULT_CLIENT_ID = "unknown";
             DEFAULT_HOST_NAME = "unknown";
         }

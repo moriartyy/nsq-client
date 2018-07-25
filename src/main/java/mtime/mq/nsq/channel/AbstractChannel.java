@@ -1,13 +1,12 @@
 package mtime.mq.nsq.channel;
 
+import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.*;
 import mtime.mq.nsq.exceptions.NSQException;
 import mtime.mq.nsq.frames.ErrorFrame;
 import mtime.mq.nsq.frames.Frame;
 import mtime.mq.nsq.frames.MessageFrame;
 import mtime.mq.nsq.frames.ResponseFrame;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 
 import java.util.Date;
 import java.util.concurrent.BlockingDeque;
@@ -19,8 +18,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * @author hongmiao.yu
  */
+@Slf4j
 public abstract class AbstractChannel implements Channel {
-    private static final Logger LOGGER = LogManager.getLogger(AbstractChannel.class);
     private BlockingDeque<ResponseHandler> responseHandlers = new LinkedBlockingDeque<>(10);
     private final ServerAddress serverAddress;
     private final Config config;
@@ -66,7 +65,7 @@ public abstract class AbstractChannel implements Channel {
 
     @Override
     public void send(Command command) throws NSQException {
-        LOGGER.debug("Sending command {}", command.getLine());
+        log.debug("Sending command {}", command.getLine());
         try {
             doSend(command);
         } catch (NSQException e) {
@@ -141,7 +140,7 @@ public abstract class AbstractChannel implements Channel {
     }
 
     private void receiveResponseFrame(ResponseFrame response) {
-        LOGGER.debug("Received response: {}", response.getMessage());
+        log.debug("Received response: {}", response.getMessage());
         if (response.isHeartbeat()) {
             send(Command.NOP);
         } else {
@@ -150,8 +149,8 @@ public abstract class AbstractChannel implements Channel {
     }
 
     private void receiveMessageFrame(MessageFrame message) {
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Received message: {}", new String(message.getMessageId()));
+        if (log.isDebugEnabled()) {
+            log.debug("Received message: {}", new String(message.getMessageId()));
         }
 
         if (messageHandler == null) {
@@ -163,7 +162,7 @@ public abstract class AbstractChannel implements Channel {
         try {
             this.messageHandler.process(toMessage(message));
         } catch (Exception e) {
-            LOGGER.error("Process message failed, id={}", new String(message.getMessageId()), e);
+            log.error("Process message failed, id={}", new String(message.getMessageId()), e);
         }
     }
 

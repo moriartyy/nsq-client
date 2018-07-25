@@ -1,12 +1,8 @@
 package mtime.mq.nsq.frames;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-
 import java.nio.charset.StandardCharsets;
 
 public class ResponseFrame extends Frame {
-    protected static final Logger LOGGER = LogManager.getLogger(ResponseFrame.class);
     private String message;
 
     @Override
