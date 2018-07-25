@@ -196,7 +196,7 @@ public class Consumer implements Closeable {
         }
 
         @Getter
-        static class SubscriptionStatus {
+        public static class SubscriptionStatus {
             private int maxInFlight;
             private int threads;
             private int queueSize;
@@ -219,7 +219,7 @@ public class Consumer implements Closeable {
         }
 
         @Getter
-        static class ChannelStatus {
+        public static class ChannelStatus {
             private int inFlight;
             private int readyCount;
             private boolean connected;

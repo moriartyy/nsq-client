@@ -93,7 +93,7 @@ public class Producer implements Closeable {
         return addressesOfTopic[roundRobinCountForTopic.getAndIncrement() % addressesOfTopic.length];
     }
 
-    public void multiPublish(String topic, List<byte[]> messages) throws NSQException {
+    public void publish(String topic, List<byte[]> messages) throws NSQException {
         if (messages == null || messages.isEmpty()) {
             return;
         }
@@ -111,7 +111,7 @@ public class Producer implements Closeable {
         sendCommand(topic, Command.publish(topic, message));
     }
 
-    public void deferredPublish(String topic, byte[] message, int deferMillis) throws NSQException {
+    public void publish(String topic, byte[] message, int deferMillis) throws NSQException {
         sendCommand(topic, Command.deferredPublish(topic, message, deferMillis));
     }
 
