@@ -14,6 +14,7 @@ import mtime.mq.nsq.support.DaemonThreadFactory;
 import java.io.Closeable;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class Consumer implements Closeable {
@@ -79,7 +80,6 @@ public class Consumer implements Closeable {
     private void maintenanceSubscriptions() {
         subscriptions.forEach((subscription, channels) -> {
             try {
-                removeDisconnectedChannels(channels);
                 updateSubscription(subscription, channels);
             } catch (Exception e) {
                 log.error("Exception caught while maintenance subscription(topic={}, channel={})",
@@ -102,34 +102,52 @@ public class Consumer implements Closeable {
         });
     }
 
-    private void removeDisconnectedChannels(List<Channel> channels) {
-        channels.removeIf(c -> !c.isConnected());
-    }
-
     private void updateSubscription(Subscription subscription, List<Channel> channels) {
+
         Set<ServerAddress> found = lookup(subscription.getTopic());
-        if (found.isEmpty()) {
-            return;
+
+        if (!found.isEmpty()) {
+            removeObsoletedServers(found, channels);
+            connectToAbsentServers(subscription, found, channels);
         }
 
-        removeObsoletedChannels(found, channels);
-        openChannelToAbsentServers(subscription, found, channels);
+        reconnectToDisconnectedServers(subscription, channels);
         updateReadyCountForChannels(subscription.getMaxInFlight(), channels);
     }
 
-    private void openChannelToAbsentServers(Subscription subscription, Set<ServerAddress> addresses, List<Channel> channels) {
-        Set<ServerAddress> absentAddresses = new HashSet<>(addresses);
-        channels.forEach(c -> absentAddresses.remove(c.getRemoteAddress()));
-        absentAddresses.forEach(s -> {
-            try {
-                channels.add(createChannel(subscription, s));
-            } catch (Exception e) {
-                log.error("Failed to open channel from address {}", s, e);
-            }
-        });
+    private void reconnectToDisconnectedServers(Subscription subscription, List<Channel> channels) {
+
+        List<ServerAddress> disconnectedServers = channels.stream()
+                .filter(c -> !c.isConnected())
+                .map(Channel::getRemoteAddress).collect(Collectors.toList());
+
+        if (disconnectedServers.isEmpty()) {
+            return;
+        }
+
+        channels.removeIf(c -> disconnectedServers.contains(c.getRemoteAddress()));
+
+        disconnectedServers.forEach(s -> tryCreateChannel(subscription, s, channels));
     }
 
-    private void removeObsoletedChannels(Set<ServerAddress> addresses, List<Channel> channels) {
+    private void connectToAbsentServers(Subscription subscription, Set<ServerAddress> addresses, List<Channel> channels) {
+
+        Set<ServerAddress> absentAddresses = new HashSet<>(addresses);
+
+        channels.forEach(c -> absentAddresses.remove(c.getRemoteAddress()));
+
+        absentAddresses.forEach(s -> tryCreateChannel(subscription, s, channels));
+    }
+
+    private void tryCreateChannel(Subscription subscription, ServerAddress s, List<Channel> channels) {
+        try {
+            channels.add(createChannel(subscription, s));
+        } catch (Exception e) {
+            log.error("Failed to open channel from address {}", s, e);
+        }
+    }
+
+    private void removeObsoletedServers(Set<ServerAddress> addresses, List<Channel> channels) {
         Iterator<Channel> iterator = channels.iterator();
         while (iterator.hasNext()) {
             Channel c = iterator.next();

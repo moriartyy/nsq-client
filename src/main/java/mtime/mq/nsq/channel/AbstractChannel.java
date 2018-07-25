@@ -20,16 +20,19 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Slf4j
 public abstract class AbstractChannel implements Channel {
-    private BlockingDeque<ResponseHandler> responseHandlers = new LinkedBlockingDeque<>(10);
+    private final long heartbeatTimeoutInMillis;
+    private final BlockingDeque<ResponseHandler> responseHandlers = new LinkedBlockingDeque<>(10);
     private final ServerAddress serverAddress;
     private final Config config;
     private MessageHandler messageHandler;
-    private AtomicInteger inFlight = new AtomicInteger();
-    private volatile int ready = 0;
+    private final AtomicInteger inFlight = new AtomicInteger();
+    private volatile int readyCount = 0;
+    private volatile long lastHeartbeatTime;
 
     public AbstractChannel(ServerAddress serverAddress, Config config) {
         this.serverAddress = serverAddress;
         this.config = config;
+        this.heartbeatTimeoutInMillis = this.config.getHeartbeatTimeoutInMillis();
     }
 
     @Override
@@ -39,14 +42,13 @@ public abstract class AbstractChannel implements Channel {
 
     @Override
     public int getReadyCount() {
-        return ready;
+        return readyCount;
     }
 
     @Override
     public Config getConfig() {
         return config;
     }
-
 
     @Override
     public void setMessageHandler(MessageHandler messageHandler) {
@@ -60,7 +62,7 @@ public abstract class AbstractChannel implements Channel {
 
     @Override
     public boolean isConnected() {
-        return false;
+        return this.isHeartbeatTimeout();
     }
 
     @Override
@@ -96,6 +98,10 @@ public abstract class AbstractChannel implements Channel {
         this.responseHandlers.pollLast();
     }
 
+    private boolean isHeartbeatTimeout() {
+        return System.currentTimeMillis() - this.lastHeartbeatTime > this.heartbeatTimeoutInMillis;
+    }
+
     private void queueResponseHandler(ResponseHandler responseHandler) {
         if (!responseHandlers.offer(responseHandler)) {
             throw new NSQException("Too many commands");
@@ -104,7 +110,7 @@ public abstract class AbstractChannel implements Channel {
 
     @Override
     public void sendReady(int count) throws NSQException {
-        this.ready = count;
+        this.readyCount = count;
         Channel.super.sendReady(count);
     }
 
@@ -142,10 +148,15 @@ public abstract class AbstractChannel implements Channel {
     private void receiveResponseFrame(ResponseFrame response) {
         log.debug("Received response: {}", response.getMessage());
         if (response.isHeartbeat()) {
-            send(Command.NOP);
+            handleHeartbeat();
         } else {
             handleResponse(Response.ok(response.getMessage()));
         }
+    }
+
+    private void handleHeartbeat() {
+        this.lastHeartbeatTime = System.currentTimeMillis();
+        send(Command.NOP);
     }
 
     private void receiveMessageFrame(MessageFrame message) {

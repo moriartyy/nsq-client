@@ -63,7 +63,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
 
     @Override
     public boolean isConnected() {
-        return this.channel.isActive();
+        return super.isConnected() && this.channel.isActive();
     }
 
     @Override

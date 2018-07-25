@@ -125,14 +125,14 @@ public class Command {
         builder.append("{\"client_id\":\"").append(config.getClientId()).append("\", ");
         builder.append("\"hostname\":\"").append(config.getHostname()).append("\", ");
         builder.append("\"feature_negotiation\": true, ");
-        if (config.getHeartbeatInterval() != null) {
-            builder.append("\"heartbeat_interval\":").append(config.getHeartbeatInterval()).append(", ");
+        if (config.getHeartbeatIntervalInMillis() != null) {
+            builder.append("\"heartbeat_interval\":").append(config.getHeartbeatIntervalInMillis()).append(", ");
         }
         if (config.getOutputBufferSize() != null) {
             builder.append("\"output_buffer_size\":").append(config.getOutputBufferSize()).append(", ");
         }
-        if (config.getOutputBufferTimeout() != null) {
-            builder.append("\"output_buffer_timeout\":").append(config.getOutputBufferTimeout()).append(", ");
+        if (config.getOutputBufferTimeoutInMillis() != null) {
+            builder.append("\"output_buffer_timeout\":").append(config.getOutputBufferTimeoutInMillis()).append(", ");
         }
         if (config.isTlsV1()) {
             builder.append("\"tls_v1\":").append(config.isTlsV1()).append(", ");
@@ -149,8 +149,8 @@ public class Command {
         if (config.getSampleRate() != null) {
             builder.append("\"sample_rate\":").append(config.getSampleRate()).append(", ");
         }
-        if (config.getMsgTimeout() != null) {
-            builder.append("\"msg_timeout\":").append(config.getMsgTimeout()).append(", ");
+        if (config.getMsgTimeoutInMillis() != null) {
+            builder.append("\"msg_timeout\":").append(config.getMsgTimeoutInMillis()).append(", ");
         }
         builder.append("\"user_agent\": \"").append(config.getUserAgent()).append("\"}");
         return builder.toString();
