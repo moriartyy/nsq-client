@@ -1,0 +1,25 @@
+stages:
+  - lint
+  - build
+
+lint:
+  image: $CI_REGISTRY/devops/java/build
+  stage: lint
+  only:
+    - develop
+  script:
+    - sonar mtime
+  tags:
+    - maven
+
+build:
+  image: $CI_REGISTRY/devops/java/build
+  stage: build
+  only:
+    - develop
+    - release
+    - master
+  script:
+    - mvn deploy -ff -B
+  tags:
+    - maven
