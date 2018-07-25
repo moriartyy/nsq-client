@@ -33,6 +33,7 @@ public class Config {
 
     public static final int DISABLE_SAMPLE_RATE = 0;
     public static final long LOOKUP_PERIOD_NEVER = 0L;
+    public static final long DEFAULT_LOOKUP_PERIOD = 60 * 1000L;
 
     public enum Compression {NO_COMPRESSION, DEFLATE, SNAPPY}
 
@@ -50,7 +51,7 @@ public class Config {
     private Integer msgTimeout = null;
     private SslContext sslContext = null;
     private Lookup lookup;
-    private long lookupPeriodMills = LOOKUP_PERIOD_NEVER;
+    private long lookupPeriodMills = DEFAULT_LOOKUP_PERIOD;
     private int socketThreads = DEFAULT_SOCKET_THREADS;
 
 }

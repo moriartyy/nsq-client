@@ -12,8 +12,13 @@ import lombok.Setter;
 @Setter
 public class ConsumerConfig extends Config {
 
-    public ConsumerConfig() {
-        setLookupPeriodMills(60 * 1000L);
+    @Override
+    public String getClientId() {
+        String clientId = super.getClientId();
+        if (clientId.startsWith("producer")) {
+            return clientId;
+        }
+        return "producer/" + clientId;
     }
 
 }

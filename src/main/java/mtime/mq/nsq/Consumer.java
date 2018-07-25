@@ -31,8 +31,10 @@ public class Consumer implements Closeable {
     public Consumer(ConsumerConfig config) {
         validateConfig(config);
         this.config = config;
-        this.scheduler.scheduleAtFixedRate(this::maintenanceSubscriptions,
-                this.config.getLookupPeriodMills(), this.config.getLookupPeriodMills(), TimeUnit.MILLISECONDS);
+        if (this.config.getLookupPeriodMills() != Config.LOOKUP_PERIOD_NEVER) {
+            this.scheduler.scheduleAtFixedRate(this::maintenanceSubscriptions,
+                    this.config.getLookupPeriodMills(), this.config.getLookupPeriodMills(), TimeUnit.MILLISECONDS);
+        }
     }
 
     private synchronized mtime.mq.nsq.Executor getDefaultExecutor() {
