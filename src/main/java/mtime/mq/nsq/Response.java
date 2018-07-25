@@ -15,6 +15,10 @@ public class Response {
         this.message = message;
     }
 
+    public boolean isOk() {
+        return this.status == Status.OK;
+    }
+
     public Status getStatus() {
         return this.status;
     }

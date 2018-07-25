@@ -12,6 +12,7 @@ import mtime.mq.nsq.support.DaemonThreadFactory;
 import java.io.Closeable;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -33,6 +34,9 @@ public class Producer implements Closeable {
     private final AtomicInteger pendingCommands = new AtomicInteger(0);
 
     public Producer(ProducerConfig config) {
+
+        validateConfig(config);
+
         this.config = config;
 
         if (this.config.getLookupPeriodMills() != Config.LOOKUP_PERIOD_NEVER) {
@@ -40,6 +44,10 @@ public class Producer implements Closeable {
                     config.getLookupPeriodMills(), config.getLookupPeriodMills(), TimeUnit.MILLISECONDS);
 
         }
+    }
+
+    private void validateConfig(ProducerConfig config) {
+        Objects.requireNonNull(config.getLookup(), "lookup");
     }
 
     private void updateServers() {
@@ -102,30 +110,45 @@ public class Producer implements Closeable {
             return;
         }
 
-        sendCommand(topic, Command.multiPublish(topic, messages));
+        doPublish(topic, Command.multiPublish(topic, messages));
     }
 
     public void publish(String topic, byte[] message) throws NSQException {
-        sendCommand(topic, Command.publish(topic, message));
+        doPublish(topic, Command.publish(topic, message));
     }
 
     public void publish(String topic, byte[] message, int deferMillis) throws NSQException {
-        sendCommand(topic, Command.deferredPublish(topic, message, deferMillis));
+        doPublish(topic, Command.deferredPublish(topic, message, deferMillis));
     }
 
-    private void sendCommand(String topic, Command command) throws NSQException {
+    private void doPublish(String topic, Command command) throws NSQException {
         checkRunningState();
-        pendingCommands.incrementAndGet();
-        Channel channel = acquireChannel(topic);
+        Channel channel = null;
         try {
+            countUp();
+            channel = acquireChannel(topic);
             Response response = channel.sendAndWait(command);
             if (response.getStatus() == Response.Status.ERROR) {
                 throw new NSQException("Publish failed, reason: " + response.getMessage());
             }
         } finally {
-            pendingCommands.decrementAndGet();
-            getPool(channel.getRemoteAddress()).release(channel);
+            if (channel != null) {
+                try {
+                    getPool(channel.getRemoteAddress()).release(channel);
+                } catch (Exception e) {
+                    log.warn("Release channel failed", e);
+                }
+            }
+            countDown();
         }
+    }
+
+    private void countDown() {
+        pendingCommands.decrementAndGet();
+    }
+
+    private void countUp() {
+        pendingCommands.incrementAndGet();
     }
 
     private void checkRunningState() {
@@ -137,7 +160,7 @@ public class Producer implements Closeable {
     public void close() {
         running.set(false);
         scheduler.shutdownNow();
-        waitPendingCommandsToBeCompleted();
+        waitPendingCommandsToBeCompleted(TimeUnit.SECONDS.toMillis(5L));
         closePools();
     }
 
@@ -145,8 +168,8 @@ public class Producer implements Closeable {
         clientPools.values().forEach(CloseableUtils::closeQuietly);
     }
 
-    private void waitPendingCommandsToBeCompleted() {
-        long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(5L);
+    private void waitPendingCommandsToBeCompleted(long timeoutMillis) {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
         while (pendingCommands.get() > 0 && System.currentTimeMillis() < deadline) {
             try {
                 Thread.sleep(10L);

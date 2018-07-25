@@ -22,7 +22,7 @@ public class Consumer implements Closeable {
     private final Map<Subscription, List<Channel>> subscriptions = new ConcurrentHashMap<>();
 
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(DaemonThreadFactory.create("nsqConsumerScheduler"));
-    private mtime.mq.nsq.Executor defaultExecutor;
+    private Executor defaultExecutor;
 
     public Consumer(ConsumerConfig config) {
         validateConfig(config);
@@ -33,15 +33,15 @@ public class Consumer implements Closeable {
         }
     }
 
-    private synchronized mtime.mq.nsq.Executor getDefaultExecutor() {
+    private synchronized Executor getDefaultExecutor() {
         if (this.defaultExecutor == null) {
             this.defaultExecutor = newExecutor(0);
         }
         return this.defaultExecutor;
     }
 
-    private mtime.mq.nsq.Executor newExecutor(int threads) {
-        return new mtime.mq.nsq.Executor.DefaultExecutorImpl(threads);
+    private Executor newExecutor(int threads) {
+        return new Executor.DefaultImpl(threads);
     }
 
     public void subscribe(String topic, String channel, MessageHandler messageHandler) {
@@ -52,7 +52,7 @@ public class Consumer implements Closeable {
         subscribe(topic, channel, messageHandler, newExecutor(numberOfThreads), 0);
     }
 
-    public void subscribe(String topic, String channel, MessageHandler messageHandler, mtime.mq.nsq.Executor executor, int maxInFlight) {
+    public void subscribe(String topic, String channel, MessageHandler messageHandler, Executor executor, int maxInFlight) {
         Subscription subscription = Subscription.builder()
                 .topic(topic)
                 .channel(channel)
@@ -65,11 +65,11 @@ public class Consumer implements Closeable {
             throw new NSQException("Subscription(topic=" + topic + ", channel=" + channel + ") already exist");
         }
 
-        this.initChannels(subscription);
+        this.initSubscription(subscription);
     }
 
-    private void initChannels(Subscription subscription) {
-        updateChannelsByLookup(subscription, subscriptions.computeIfAbsent(subscription, s -> new CopyOnWriteArrayList<>()));
+    private void initSubscription(Subscription subscription) {
+        updateSubscription(subscription, subscriptions.computeIfAbsent(subscription, s -> new CopyOnWriteArrayList<>()));
     }
 
     private void validateConfig(ConsumerConfig config) {
@@ -80,7 +80,7 @@ public class Consumer implements Closeable {
         subscriptions.forEach((subscription, channels) -> {
             try {
                 removeDisconnectedChannels(channels);
-                updateChannelsByLookup(subscription, channels);
+                updateSubscription(subscription, channels);
             } catch (Exception e) {
                 log.error("Exception caught while maintenance subscription(topic={}, channel={})",
                         subscription.getTopic(), subscription.getChannel(), e);
@@ -88,42 +88,43 @@ public class Consumer implements Closeable {
         });
     }
 
-    private void updateReadyCountForChannels(Subscription subscription, List<Channel> channels) {
-        final int newReadyCount = subscription.maxInFlight / channels.size();
-        channels.stream().filter(c -> c.getReadyCount() != newReadyCount)
-                .forEach(c -> {
-                    try {
-                        c.sendReady(newReadyCount);
-                    } catch (NSQException e) {
-                        CloseableUtils.closeQuietly(c);
-                        log.error("Exception caught while sending read to channel(address={})", c.getRemoteAddress(), e);
-                    }
-                });
+    private void updateReadyCountForChannels(int maxInFlight, List<Channel> channels) {
+        final int newReadyCount = maxInFlight / channels.size();
+        channels.forEach(c -> {
+            if (c.getReadyCount() != newReadyCount) {
+                try {
+                    c.sendReady(newReadyCount);
+                } catch (NSQException e) {
+                    CloseableUtils.closeQuietly(c);
+                    log.error("Exception caught while sending read to channel(address={})", c.getRemoteAddress(), e);
+                }
+            }
+        });
     }
 
     private void removeDisconnectedChannels(List<Channel> channels) {
         channels.removeIf(c -> !c.isConnected());
     }
 
-    private void updateChannelsByLookup(Subscription subscription, List<Channel> channels) {
+    private void updateSubscription(Subscription subscription, List<Channel> channels) {
         Set<ServerAddress> found = lookup(subscription.getTopic());
         if (found.isEmpty()) {
             return;
         }
 
         removeObsoletedChannels(found, channels);
-        openChannelsToAbsentServers(subscription, found, channels);
-        updateReadyCountForChannels(subscription, channels);
+        openChannelToAbsentServers(subscription, found, channels);
+        updateReadyCountForChannels(subscription.getMaxInFlight(), channels);
     }
 
-    private void openChannelsToAbsentServers(Subscription subscription, Set<ServerAddress> addresses, List<Channel> channels) {
-        Set<ServerAddress> missingAddresses = new HashSet<>(addresses);
-        channels.forEach(c -> missingAddresses.remove(c.getRemoteAddress()));
-        missingAddresses.forEach(s -> {
+    private void openChannelToAbsentServers(Subscription subscription, Set<ServerAddress> addresses, List<Channel> channels) {
+        Set<ServerAddress> absentAddresses = new HashSet<>(addresses);
+        channels.forEach(c -> absentAddresses.remove(c.getRemoteAddress()));
+        absentAddresses.forEach(s -> {
             try {
                 channels.add(createChannel(subscription, s));
             } catch (Exception e) {
-                log.error("Failed to create channel from address {}", s, e);
+                log.error("Failed to open channel from address {}", s, e);
             }
         });
     }
@@ -140,7 +141,7 @@ public class Consumer implements Closeable {
     }
 
     private Channel createChannel(Subscription subscription, final ServerAddress address) {
-        Channel channel = NettyChannel.instance(address, config);
+        Channel channel = NettyChannel.open(address, config);
         channel.setMessageHandler(new ConsumerMessageHandler(subscription));
         Response response = channel.sendSubscribe(subscription.getTopic(), subscription.getChannel());
         if (response.getStatus() == Response.Status.ERROR) {
@@ -235,7 +236,7 @@ public class Consumer implements Closeable {
     class ConsumerMessageHandler implements MessageHandler {
 
         private final MessageHandler handler;
-        private final mtime.mq.nsq.Executor executor;
+        private final Executor executor;
         private final String topic;
         private final String channel;
 
@@ -267,10 +268,10 @@ public class Consumer implements Closeable {
         private String topic;
         private String channel;
         private MessageHandler handler;
-        private mtime.mq.nsq.Executor executor;
+        private Executor executor;
         private int maxInFlight;
 
-        Subscription(String topic, String channel, MessageHandler handler, mtime.mq.nsq.Executor executor, int maxInFlight) {
+        Subscription(String topic, String channel, MessageHandler handler, Executor executor, int maxInFlight) {
             Objects.requireNonNull(handler, "MessageHandler can not be null");
 
             this.topic = topic;

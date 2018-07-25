@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
  * @author hongmiao.yu
  */
 public interface Executor {
+
     int threadsCount();
 
     int queueSize();
@@ -18,12 +19,12 @@ public interface Executor {
 
     void shutdown();
 
-    class DefaultExecutorImpl implements Executor {
+    class DefaultImpl implements Executor {
         private static final int DEFAULT_THREADS = Runtime.getRuntime().availableProcessors() * 2;
         private final ThreadPoolExecutor executor;
         private final int threads;
 
-        public DefaultExecutorImpl(int threads) {
+        DefaultImpl(int threads) {
             this.threads = threads == 0 ? DEFAULT_THREADS : threads;
             this.executor = new ThreadPoolExecutor(this.threads, this.threads,
                     1L, TimeUnit.MINUTES,
