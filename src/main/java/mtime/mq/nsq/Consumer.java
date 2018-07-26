@@ -189,7 +189,9 @@ public class Consumer implements Closeable {
 
     private Set<ServerAddress> lookup(String topic) {
         try {
-            return this.lookup.lookup(topic);
+            Set<ServerAddress> servers = this.lookup.lookup(topic);
+            log.debug("lookup servers for topic {}: {}", topic, servers);
+            return servers;
         } catch (Exception e) {
             log.error("Look up servers for topic '{}' failed", e);
             return Collections.emptySet();

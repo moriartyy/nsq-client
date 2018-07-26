@@ -5,6 +5,7 @@ import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.channel.ChannelPool;
 import mtime.mq.nsq.exceptions.NSQException;
 import mtime.mq.nsq.exceptions.NoConnectionsException;
+import mtime.mq.nsq.lookup.Lookup;
 import mtime.mq.nsq.netty.NettyChannelPool;
 import mtime.mq.nsq.support.CloseableUtils;
 import mtime.mq.nsq.support.DaemonThreadFactory;
@@ -30,10 +31,12 @@ public class Producer implements Closeable {
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final AtomicInteger pendingCommands = new AtomicInteger(0);
     private final int maxPublishRetries;
+    private final Lookup lookup;
 
     public Producer(ProducerConfig config) {
         validateConfig(config);
         this.config = config;
+        this.lookup = config.getLookup();
         this.maxPublishRetries = config.getMaxPublishRetries();
 
         if (this.config.getLookupPeriodMillis() > 0) {
@@ -72,7 +75,7 @@ public class Producer implements Closeable {
 
     private void updateServerAddresses() {
         this.servers.keySet().forEach(topic -> {
-            ServerAddress[] found = lookupServers(topic);
+            ServerAddress[] found = lookup(topic);
             if (found.length == 0) {
                 return;
             }
@@ -80,8 +83,15 @@ public class Producer implements Closeable {
         });
     }
 
-    private ServerAddress[] lookupServers(String topic) {
-        return config.getLookup().lookup(topic).toArray(new ServerAddress[0]);
+    private ServerAddress[] lookup(String topic) {
+        try {
+            Set<ServerAddress> servers = this.lookup.lookup(topic);
+            log.debug("lookup servers for topic {} : {}", topic, servers);
+            return servers.toArray(new ServerAddress[0]);
+        } catch (Exception e) {
+            log.error("Look up servers for topic '{}' failed", e);
+            return new ServerAddress[0];
+        }
     }
 
     private Channel acquire(String topic) throws NoConnectionsException {
@@ -99,7 +109,7 @@ public class Producer implements Closeable {
     }
 
     private ServerAddress nextServer(String topic) {
-        ServerAddress[] serversOfTopic = servers.computeIfAbsent(topic, this::lookupServers);
+        ServerAddress[] serversOfTopic = servers.computeIfAbsent(topic, this::lookup);
         if (serversOfTopic.length == 0) {
             throw new IllegalStateException("No server configured for topic " + topic);
         }

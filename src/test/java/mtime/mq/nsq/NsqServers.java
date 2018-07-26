@@ -29,4 +29,8 @@ public class NsqServers {
 
     public static Lookup PRODUCE_LOOKUP = FixedLookup.wrap(PRODUCE_SERVERS);
 
+    public static void main(String[] args) {
+        System.out.println(SUBSCRIBE_SERVERS);
+    }
+
 }
