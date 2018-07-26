@@ -1,5 +1,6 @@
 package mtime.mq.nsq.netty;
 
+import io.netty.channel.EventLoop;
 import io.netty.channel.pool.AbstractChannelPoolHandler;
 import io.netty.channel.pool.ChannelHealthChecker;
 import io.netty.channel.pool.ChannelPoolHandler;
@@ -26,7 +27,7 @@ public class NettyChannelPool implements ChannelPool {
         this.channelPool = new FixedChannelPool(
                 NettyHelper.createBootstrap(serverAddress, config.getSocketThreads()),
                 new NettyChannelPoolHandler(),
-                ChannelHealthChecker.ACTIVE,
+                new NettyChannelHealthChecker(),
                 FixedChannelPool.AcquireTimeoutAction.FAIL, config.getConnectionTimeoutMillis(),
                 config.getConnectionsPerServer(), 100);
     }
@@ -41,10 +42,15 @@ public class NettyChannelPool implements ChannelPool {
     }
 
     private Channel getOrCreateClient(io.netty.channel.Channel channel) {
+        Channel c = extract(channel);
+        return c == null ? createChannel(channel) : c;
+    }
+
+    private NettyChannel extract(io.netty.channel.Channel channel) {
         if (channel.hasAttr(NettyChannel.CHANNEL_KEY)) {
             return channel.attr(NettyChannel.CHANNEL_KEY).get();
         }
-        return createChannel(channel);
+        return null;
     }
 
     private NettyChannel createChannel(io.netty.channel.Channel channel) {
@@ -53,7 +59,7 @@ public class NettyChannelPool implements ChannelPool {
 
     @Override
     public void release(Channel channel) {
-        this.channelPool.release(((NettyChannel) channel).getChannel());
+        this.channelPool.release(((NettyChannel) channel).getChannel()).awaitUninterruptibly();
     }
 
     @Override
@@ -64,11 +70,22 @@ public class NettyChannelPool implements ChannelPool {
     /**
      * @author hongmiao.yu
      */
-    public class NettyChannelPoolHandler extends AbstractChannelPoolHandler implements ChannelPoolHandler {
+    class NettyChannelPoolHandler extends AbstractChannelPoolHandler implements ChannelPoolHandler {
 
         @Override
         public void channelCreated(io.netty.channel.Channel channel) throws Exception {
             NettyHelper.initChannel(channel);
+        }
+    }
+
+    class NettyChannelHealthChecker implements ChannelHealthChecker {
+
+        @Override
+        public Future<Boolean> isHealthy(io.netty.channel.Channel channel) {
+            Channel c = extract(channel);
+            EventLoop loop = channel.eventLoop();
+            return (c == null ? channel.isActive() : c.isConnected()) ?
+                    loop.newSucceededFuture(Boolean.TRUE) : loop.newSucceededFuture(Boolean.FALSE);
         }
     }
 }

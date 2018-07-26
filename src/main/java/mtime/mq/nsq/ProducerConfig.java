@@ -11,6 +11,7 @@ import lombok.Setter;
 public class ProducerConfig extends Config {
     private long connectionTimeoutMillis = 3000L;
     private int connectionsPerServer = 2;
+    private int maxPublishRetries = 1;
 
     @Override
     public String getClientId() {

@@ -10,39 +10,35 @@ import mtime.mq.nsq.support.CloseableUtils;
 import mtime.mq.nsq.support.DaemonThreadFactory;
 
 import java.io.Closeable;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class Producer implements Closeable {
 
-    private static final int MAX_CONNECTION_RETRIES = 3;
-
     private final Map<String /*topic*/, ServerAddress[]> addresses = new ConcurrentHashMap<>();
     private final Map<String /*topic*/, AtomicInteger> roundRobinCounts = new ConcurrentHashMap<>();
     private final ProducerConfig config;
-    private final Map<ServerAddress, ChannelPool> clientPools = new ConcurrentHashMap<>();
+    private final Map<ServerAddress, ChannelPool> pools = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(DaemonThreadFactory.create("nsqProducerScheduler"));
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final AtomicInteger pendingCommands = new AtomicInteger(0);
+    private final int maxPublishRetries;
 
     public Producer(ProducerConfig config) {
-
         validateConfig(config);
-
         this.config = config;
+        this.maxPublishRetries = config.getMaxPublishRetries();
 
         if (this.config.getLookupPeriodMillis() > 0) {
             this.scheduler.scheduleAtFixedRate(this::updateServers,
                     config.getLookupPeriodMillis(), config.getLookupPeriodMillis(), TimeUnit.MILLISECONDS);
-
         }
     }
 
@@ -52,42 +48,54 @@ public class Producer implements Closeable {
 
     private void updateServers() {
         try {
-            this.addresses.keySet().forEach(topic -> {
-                ServerAddress[] addresses = lookupServerAddresses(topic);
-                if (addresses.length > 0) {
-                    this.addresses.put(topic, addresses);
-                }
-            });
+            updateServerAddresses();
+            closePoolsOfObsoletedServers();
         } catch (Exception e) {
             log.error("update servers failed", e);
         }
+    }
+
+    private void closePoolsOfObsoletedServers() {
+        Set<ServerAddress> totalAddresses = this.addresses.values().stream()
+                .flatMap(Arrays::stream).collect(Collectors.toSet());
+
+        Set<ServerAddress> obsoletedAddresses = this.pools.keySet().stream()
+                .filter(s -> !totalAddresses.contains(s)).collect(Collectors.toSet());
+
+        obsoletedAddresses.forEach(a -> {
+            ChannelPool pool = this.pools.remove(a);
+            if (pool != null) {
+                CloseableUtils.closeQuietly(pool);
+            }
+        });
+    }
+
+    private void updateServerAddresses() {
+        this.addresses.keySet().forEach(topic -> {
+            ServerAddress[] addresses = lookupServerAddresses(topic);
+            if (addresses.length == 0) {
+                return;
+            }
+            this.addresses.put(topic, addresses);
+        });
     }
 
     private ServerAddress[] lookupServerAddresses(String topic) {
         return config.getLookup().lookup(topic).toArray(new ServerAddress[0]);
     }
 
-    private Channel acquireChannel(String topic) throws NoConnectionsException {
-        int retries = 0;
-        while (running.get() && retries < MAX_CONNECTION_RETRIES) {
-            try {
-                ServerAddress address = nextAddress(topic);
-                return acquireChannel(address);
-            } catch (Exception ex) {
-                log.error("Acquire channel for topic {} failed", topic, ex);
-            }
-            retries++;
-        }
-        throw new NoConnectionsException("Could not acquire a connection from pool after try " + MAX_CONNECTION_RETRIES + " times.");
+    private Channel acquire(String topic) throws NoConnectionsException {
+        ServerAddress address = nextAddress(topic);
+        return acquire(address);
     }
 
-    private Channel acquireChannel(ServerAddress address) {
+    private Channel acquire(ServerAddress address) {
         ChannelPool pool = getPool(address);
         return pool.acquire();
     }
 
     private ChannelPool getPool(ServerAddress address) {
-        return clientPools.computeIfAbsent(address, a -> new NettyChannelPool(a, this.config));
+        return pools.computeIfAbsent(address, a -> new NettyChannelPool(a, this.config));
     }
 
     private ServerAddress nextAddress(String topic) {
@@ -110,36 +118,55 @@ public class Producer implements Closeable {
             return;
         }
 
-        doPublish(topic, Command.multiPublish(topic, messages));
+        publish(topic, Command.multiPublish(topic, messages));
     }
 
     public void publish(String topic, byte[] message) throws NSQException {
-        doPublish(topic, Command.publish(topic, message));
+        publish(topic, Command.publish(topic, message));
     }
 
     public void publish(String topic, byte[] message, int deferMillis) throws NSQException {
-        doPublish(topic, Command.deferredPublish(topic, message, deferMillis));
+        publish(topic, Command.deferredPublish(topic, message, deferMillis));
     }
 
-    private void doPublish(String topic, Command command) throws NSQException {
+    private void publish(String topic, Command command) throws NSQException {
         checkRunningState();
+
+        NSQException cause = null;
+
+        int i = 0;
+        while (running.get() && i++ < maxPublishRetries) {
+            try {
+                doPublish(topic, command);
+                return;
+            } catch (Exception e) {
+                cause = NSQException.of(e);
+            }
+        }
+
+        if (cause != null) {
+            throw cause;
+        }
+    }
+
+    private void doPublish(String topic, Command command) {
         Channel channel = null;
         try {
             countUp();
-            channel = acquireChannel(topic);
+            channel = acquire(topic);
             Response response = channel.sendAndWait(command);
             if (response.getStatus() == Response.Status.ERROR) {
                 throw new NSQException("Publish failed, reason: " + response.getMessage());
             }
         } finally {
             if (channel != null) {
-                releaseChannel(channel);
+                release(channel);
             }
             countDown();
         }
     }
 
-    private void releaseChannel(Channel channel) {
+    private void release(Channel channel) {
         try {
             getPool(channel.getRemoteAddress()).release(channel);
         } catch (Exception e) {
@@ -169,7 +196,7 @@ public class Producer implements Closeable {
     }
 
     private void closePools() {
-        clientPools.values().forEach(CloseableUtils::closeQuietly);
+        pools.values().forEach(CloseableUtils::closeQuietly);
     }
 
     private void waitPendingCommandsToBeCompleted(long timeoutMillis) {
