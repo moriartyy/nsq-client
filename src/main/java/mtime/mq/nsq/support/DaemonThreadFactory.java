@@ -10,13 +10,13 @@ public class DaemonThreadFactory {
 
     public static ThreadFactory create(String name) {
         return new ThreadFactory() {
-            private final AtomicInteger counter = new AtomicInteger(0);
+            private final AtomicInteger index = new AtomicInteger(0);
 
             @Override
             public Thread newThread(Runnable r) {
                 Thread t = new Thread(null, r);
                 t.setDaemon(true);
-                t.setName(name + "#" + this.counter.incrementAndGet());
+                t.setName(name + "-" + this.index.incrementAndGet());
                 return t;
             }
         };

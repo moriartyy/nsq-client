@@ -66,4 +66,7 @@ public class ConsumerTest {
     }
 
 
+    public static void main(String[] args) throws InterruptedException {
+        new ConsumerTest().testConsumeMessage();
+    }
 }

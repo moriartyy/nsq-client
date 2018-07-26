@@ -30,5 +30,8 @@ public class ProducerTest {
 
     }
 
+    public static void main(String[] args) throws InterruptedException {
+        new ProducerTest().testProduceMessage();
+    }
 
 }
