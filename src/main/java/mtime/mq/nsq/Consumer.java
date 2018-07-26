@@ -113,7 +113,7 @@ public class Consumer implements Closeable {
         if (found.isEmpty()) {
             log.error("No servers found for topic '{}'", subscription.getTopic());
         } else {
-            removeObsoletedServers(found, channels);
+            disconnectAndRemoveObsoletedServers(found, channels);
             connectToAbsentServers(subscription, found, channels);
         }
 
@@ -132,14 +132,17 @@ public class Consumer implements Closeable {
     private List<ServerAddress> removeDisconnectedServers(List<Channel> channels) {
         List<Channel> disconnectedChannels = channels.stream()
                 .filter(c -> !c.isConnected()).collect(Collectors.toList());
+
         channels.removeAll(disconnectedChannels);
+
         return disconnectedChannels.stream().map(Channel::getRemoteAddress).collect(Collectors.toList());
     }
 
-    private void connectToAbsentServers(Subscription subscription, Set<ServerAddress> addresses, List<Channel> channels) {
-        Set<ServerAddress> absentAddresses = new HashSet<>(addresses);
-        channels.forEach(c -> absentAddresses.remove(c.getRemoteAddress()));
-        absentAddresses.forEach(s -> tryCreateChannel(subscription, s, channels));
+    private void connectToAbsentServers(Subscription subscription, Set<ServerAddress> servers, List<Channel> channels) {
+        Set<ServerAddress> absentServers = new HashSet<>(servers);
+        channels.forEach(c -> absentServers.remove(c.getRemoteAddress()));
+
+        absentServers.forEach(s -> tryCreateChannel(subscription, s, channels));
     }
 
     private void tryCreateChannel(Subscription subscription, ServerAddress s, List<Channel> channels) {
@@ -150,15 +153,13 @@ public class Consumer implements Closeable {
         }
     }
 
-    private void removeObsoletedServers(Set<ServerAddress> addresses, List<Channel> channels) {
-        Iterator<Channel> iterator = channels.iterator();
-        while (iterator.hasNext()) {
-            Channel c = iterator.next();
-            if (!addresses.contains(c.getRemoteAddress())) {
-                CloseableUtils.closeQuietly(c);
-                iterator.remove();
-            }
-        }
+    private void disconnectAndRemoveObsoletedServers(Set<ServerAddress> servers, List<Channel> channels) {
+        List<Channel> obsoletedChannels = channels.stream()
+                .filter(c -> !servers.contains(c.getRemoteAddress())).collect(Collectors.toList());
+
+        obsoletedChannels.forEach(CloseableUtils::closeQuietly);
+
+        channels.removeAll(obsoletedChannels);
     }
 
     private Channel createChannel(Subscription subscription, final ServerAddress address) {

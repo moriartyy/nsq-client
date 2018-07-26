@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class Producer implements Closeable {
 
-    private final Map<String /*topic*/, ServerAddress[]> addresses = new ConcurrentHashMap<>();
+    private final Map<String /*topic*/, ServerAddress[]> servers = new ConcurrentHashMap<>();
     private final Map<String /*topic*/, AtomicInteger> roundRobinCounts = new ConcurrentHashMap<>();
     private final ProducerConfig config;
     private final Map<ServerAddress, ChannelPool> pools = new ConcurrentHashMap<>();
@@ -56,7 +56,7 @@ public class Producer implements Closeable {
     }
 
     private void closePoolsOfObsoletedServers() {
-        Set<ServerAddress> totalAddresses = this.addresses.values().stream()
+        Set<ServerAddress> totalAddresses = this.servers.values().stream()
                 .flatMap(Arrays::stream).collect(Collectors.toSet());
 
         Set<ServerAddress> obsoletedAddresses = this.pools.keySet().stream()
@@ -71,40 +71,40 @@ public class Producer implements Closeable {
     }
 
     private void updateServerAddresses() {
-        this.addresses.keySet().forEach(topic -> {
-            ServerAddress[] addresses = lookupServerAddresses(topic);
-            if (addresses.length == 0) {
+        this.servers.keySet().forEach(topic -> {
+            ServerAddress[] found = lookupServers(topic);
+            if (found.length == 0) {
                 return;
             }
-            this.addresses.put(topic, addresses);
+            this.servers.put(topic, found);
         });
     }
 
-    private ServerAddress[] lookupServerAddresses(String topic) {
+    private ServerAddress[] lookupServers(String topic) {
         return config.getLookup().lookup(topic).toArray(new ServerAddress[0]);
     }
 
     private Channel acquire(String topic) throws NoConnectionsException {
-        ServerAddress address = nextAddress(topic);
+        ServerAddress address = nextServer(topic);
         return acquire(address);
     }
 
-    private Channel acquire(ServerAddress address) {
-        ChannelPool pool = getPool(address);
+    private Channel acquire(ServerAddress server) {
+        ChannelPool pool = getPool(server);
         return pool.acquire();
     }
 
-    private ChannelPool getPool(ServerAddress address) {
-        return pools.computeIfAbsent(address, a -> new NettyChannelPool(a, this.config));
+    private ChannelPool getPool(ServerAddress server) {
+        return pools.computeIfAbsent(server, a -> new NettyChannelPool(a, this.config));
     }
 
-    private ServerAddress nextAddress(String topic) {
-        ServerAddress[] addressesOfTopic = addresses.computeIfAbsent(topic, this::lookupServerAddresses);
-        if (addressesOfTopic.length == 0) {
+    private ServerAddress nextServer(String topic) {
+        ServerAddress[] serversOfTopic = servers.computeIfAbsent(topic, this::lookupServers);
+        if (serversOfTopic.length == 0) {
             throw new IllegalStateException("No server configured for topic " + topic);
         }
         AtomicInteger roundRobinCountForTopic = roundRobinCounts.computeIfAbsent(topic, t -> new AtomicInteger());
-        return addressesOfTopic[roundRobinCountForTopic.getAndIncrement() % addressesOfTopic.length];
+        return serversOfTopic[roundRobinCountForTopic.getAndIncrement() % serversOfTopic.length];
     }
 
     public void publish(String topic, List<byte[]> messages) throws NSQException {

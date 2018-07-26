@@ -62,4 +62,11 @@ public class ConsumerTest {
         return new Consumer(config);
     }
 
+    public static void main(String[] args) {
+        int i = 0;
+        while (++i < 1) {
+            System.out.println("hello");
+        }
+    }
+
 }
