@@ -6,7 +6,7 @@
 
     <groupId>mtime.mq.clients</groupId>
     <artifactId>nsq-client</artifactId>
-    <version>1.0.4</version>
+    <version>1.0.5-SNAPSHOT</version>
     <name>NsqClient</name>
     <description>Java client for NSQ.</description>
     <url>http://gitlab.mx.com/mq/nsq/java-client</url>
