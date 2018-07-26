@@ -75,10 +75,8 @@ public abstract class AbstractChannel implements Channel {
         log.debug("Sending command {}", command.getLine());
         try {
             doSend(command, this.sendTimeoutMillis);
-        } catch (NSQException e) {
-            throw e;
-        } catch (Exception e1) {
-            throw new NSQException("Send command failed", e1);
+        } catch (Exception e) {
+            throw NSQException.of(e);
         }
     }
 
@@ -94,7 +92,7 @@ public abstract class AbstractChannel implements Channel {
             send(command);
         } catch (Exception e) {
             this.close();
-            throw (e instanceof NSQException ? (NSQException) e : new NSQException("Error happened while sending command", e));
+            throw NSQException.of(e);
         }
 
         return responseHandler.getResponse();

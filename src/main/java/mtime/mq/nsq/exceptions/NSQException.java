@@ -8,6 +8,10 @@ public class NSQException extends RuntimeException {
         super(message);
     }
 
+    public NSQException(Throwable cause) {
+        super(cause);
+    }
+
     public NSQException(String message, Throwable cause) {
         super(message, cause);
     }
@@ -21,5 +25,9 @@ public class NSQException extends RuntimeException {
             return new BadMessageException(err);
         }
         return new NSQException(err);
+    }
+
+    public static NSQException of(Exception e) {
+        return (e instanceof NSQException ? (NSQException) e : new NSQException(e));
     }
 }
