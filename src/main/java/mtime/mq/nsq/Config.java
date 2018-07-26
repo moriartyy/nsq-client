@@ -42,7 +42,7 @@ public class Config {
     private Compression compression = Compression.NO_COMPRESSION;
     private Integer deflateLevel = null;
     private Integer sampleRate = 0;
-    private String userAgent = "JavaClient/0.1";
+    private String userAgent = "JavaClient/1.0";
     private Integer msgTimeoutMillis = null;
     private SslContext sslContext = null;
     private Lookup lookup;
