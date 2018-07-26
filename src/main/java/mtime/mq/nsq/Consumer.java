@@ -85,6 +85,10 @@ public class Consumer implements Closeable {
     }
 
     private void updateReadyCountForChannels(int maxInFlight, List<Channel> channels) {
+        if (channels.isEmpty()) {
+            return;
+        }
+
         final int newReadyCount = maxInFlight / channels.size();
         channels.forEach(c -> {
             if (c.getReadyCount() != newReadyCount) {
