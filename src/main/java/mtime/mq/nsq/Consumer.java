@@ -7,6 +7,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.exceptions.NSQException;
+import mtime.mq.nsq.lookup.Lookup;
 import mtime.mq.nsq.netty.NettyChannel;
 import mtime.mq.nsq.support.CloseableUtils;
 import mtime.mq.nsq.support.DaemonThreadFactory;
@@ -24,10 +25,12 @@ public class Consumer implements Closeable {
 
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(DaemonThreadFactory.create("nsqConsumerScheduler"));
     private Executor defaultExecutor;
+    private final Lookup lookup;
 
     public Consumer(ConsumerConfig config) {
         validateConfig(config);
         this.config = config;
+        this.lookup = config.getLookup();
         if (this.config.getLookupPeriodMills() != Config.LOOKUP_PERIOD_NEVER) {
             this.scheduler.scheduleAtFixedRate(this::maintenanceSubscriptions,
                     this.config.getLookupPeriodMills(), this.config.getLookupPeriodMills(), TimeUnit.MILLISECONDS);
@@ -70,7 +73,8 @@ public class Consumer implements Closeable {
     }
 
     private void initSubscription(Subscription subscription) {
-        updateSubscription(subscription, subscriptions.computeIfAbsent(subscription, s -> new CopyOnWriteArrayList<>()));
+        updateSubscription(
+                subscription, subscriptions.computeIfAbsent(subscription, s -> new CopyOnWriteArrayList<>()), true);
     }
 
     private void validateConfig(ConsumerConfig config) {
@@ -80,7 +84,7 @@ public class Consumer implements Closeable {
     private void maintenanceSubscriptions() {
         subscriptions.forEach((subscription, channels) -> {
             try {
-                updateSubscription(subscription, channels);
+                updateSubscription(subscription, channels, false);
             } catch (Exception e) {
                 log.error("Exception caught while maintenance subscription(topic={}, channel={})",
                         subscription.getTopic(), subscription.getChannel(), e);
@@ -102,40 +106,39 @@ public class Consumer implements Closeable {
         });
     }
 
-    private void updateSubscription(Subscription subscription, List<Channel> channels) {
+    private void updateSubscription(Subscription subscription, List<Channel> channels, boolean isNewSubscription) {
 
         Set<ServerAddress> found = lookup(subscription.getTopic());
 
-        if (!found.isEmpty()) {
+        if (found.isEmpty()) {
+            log.error("No servers found for topic '{}'", subscription.getTopic());
+        } else {
             removeObsoletedServers(found, channels);
             connectToAbsentServers(subscription, found, channels);
         }
 
-        reconnectToDisconnectedServers(subscription, channels);
+        if (!isNewSubscription) {
+            reconnectToDisconnectedServers(subscription, channels);
+        }
+
         updateReadyCountForChannels(subscription.getMaxInFlight(), channels);
     }
 
     private void reconnectToDisconnectedServers(Subscription subscription, List<Channel> channels) {
-
-        List<ServerAddress> disconnectedServers = channels.stream()
-                .filter(c -> !c.isConnected())
-                .map(Channel::getRemoteAddress).collect(Collectors.toList());
-
-        if (disconnectedServers.isEmpty()) {
-            return;
-        }
-
-        channels.removeIf(c -> disconnectedServers.contains(c.getRemoteAddress()));
-
+        List<ServerAddress> disconnectedServers = removeDisconnectedServers(channels);
         disconnectedServers.forEach(s -> tryCreateChannel(subscription, s, channels));
     }
 
+    private List<ServerAddress> removeDisconnectedServers(List<Channel> channels) {
+        List<Channel> disconnectedChannels = channels.stream()
+                .filter(c -> !c.isConnected()).collect(Collectors.toList());
+        channels.removeAll(disconnectedChannels);
+        return disconnectedChannels.stream().map(Channel::getRemoteAddress).collect(Collectors.toList());
+    }
+
     private void connectToAbsentServers(Subscription subscription, Set<ServerAddress> addresses, List<Channel> channels) {
-
         Set<ServerAddress> absentAddresses = new HashSet<>(addresses);
-
         channels.forEach(c -> absentAddresses.remove(c.getRemoteAddress()));
-
         absentAddresses.forEach(s -> tryCreateChannel(subscription, s, channels));
     }
 
@@ -188,7 +191,12 @@ public class Consumer implements Closeable {
     }
 
     private Set<ServerAddress> lookup(String topic) {
-        return this.config.getLookup().lookup(topic);
+        try {
+            return this.lookup.lookup(topic);
+        } catch (Exception e) {
+            log.error("Look up servers for topic '{}' failed", e);
+            return Collections.emptySet();
+        }
     }
 
     @Override

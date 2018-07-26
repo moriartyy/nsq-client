@@ -133,13 +133,17 @@ public class Producer implements Closeable {
             }
         } finally {
             if (channel != null) {
-                try {
-                    getPool(channel.getRemoteAddress()).release(channel);
-                } catch (Exception e) {
-                    log.warn("Release channel failed", e);
-                }
+                releaseChannel(channel);
             }
             countDown();
+        }
+    }
+
+    private void releaseChannel(Channel channel) {
+        try {
+            getPool(channel.getRemoteAddress()).release(channel);
+        } catch (Exception e) {
+            log.warn("Release channel failed", e);
         }
     }
 
