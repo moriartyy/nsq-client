@@ -67,7 +67,7 @@ public abstract class AbstractChannel implements Channel {
 
     @Override
     public boolean isConnected() {
-        return this.isHeartbeatTimeout();
+        return !this.isHeartbeatTimeout();
     }
 
     @Override
@@ -99,7 +99,11 @@ public abstract class AbstractChannel implements Channel {
     }
 
     private boolean isHeartbeatTimeout() {
-        return System.currentTimeMillis() - this.lastHeartbeatTimeMillis < this.heartbeatTimeoutMillis;
+        if (this.lastHeartbeatTimeMillis == 0L) {
+            this.lastHeartbeatTimeMillis = System.currentTimeMillis();
+            return false;
+        }
+        return System.currentTimeMillis() - this.lastHeartbeatTimeMillis > this.heartbeatTimeoutMillis;
     }
 
     private void queueResponseHandler(ResponseHandler responseHandler) {

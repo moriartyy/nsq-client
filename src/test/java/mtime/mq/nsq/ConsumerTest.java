@@ -15,9 +15,9 @@ public class ConsumerTest {
     private static String topic = "nsq_client_test";
     private static String channel = "nsq_client_test_channel";
     private static MessageHandler messagePrinter = m -> {
-        System.out.println(new String(m.getMessage()));
+//        System.out.println(new String(m.getMessage()));
         try {
-            Thread.sleep(300);
+            Thread.sleep(1000);
         } catch (InterruptedException ignored) {
         }
         m.finished();
@@ -26,7 +26,10 @@ public class ConsumerTest {
     @Test
     public void testConsumeMessage() throws InterruptedException {
         Consumer consumer = createConsumer();
-        consumer.subscribe(topic, channel, messagePrinter);
+        for (int i = 0; i < 3; i++) {
+            consumer.subscribe(topic + i, channel, messagePrinter);
+            consumer.subscribe(topic + i, channel + 1, messagePrinter);
+        }
         System.out.println("Consumer is ready");
         Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(() -> {
             Consumer.Status status = consumer.getStatus();
@@ -62,11 +65,5 @@ public class ConsumerTest {
         return new Consumer(config);
     }
 
-    public static void main(String[] args) {
-        int i = 0;
-        while (++i < 1) {
-            System.out.println("hello");
-        }
-    }
 
 }

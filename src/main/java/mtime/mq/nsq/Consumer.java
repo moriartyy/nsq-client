@@ -24,7 +24,6 @@ public class Consumer implements Closeable {
     private final Map<Subscription, List<Channel>> subscriptions = new ConcurrentHashMap<>();
 
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(DaemonThreadFactory.create("nsqConsumerScheduler"));
-    private Executor defaultExecutor;
     private final Lookup lookup;
 
     public Consumer(ConsumerConfig config) {
@@ -37,19 +36,12 @@ public class Consumer implements Closeable {
         }
     }
 
-    private synchronized Executor getDefaultExecutor() {
-        if (this.defaultExecutor == null) {
-            this.defaultExecutor = newExecutor(0);
-        }
-        return this.defaultExecutor;
-    }
-
     private Executor newExecutor(int threads) {
         return new Executor.DefaultImpl(threads);
     }
 
     public void subscribe(String topic, String channel, MessageHandler messageHandler) {
-        subscribe(topic, channel, messageHandler, null, 0);
+        subscribe(topic, channel, messageHandler, newExecutor(0), 0);
     }
 
     public void subscribe(String topic, String channel, MessageHandler messageHandler, int numberOfThreads) {
@@ -61,7 +53,7 @@ public class Consumer implements Closeable {
                 .topic(topic)
                 .channel(channel)
                 .handler(messageHandler)
-                .executor(executor == null ? getDefaultExecutor() : executor)
+                .executor(executor)
                 .maxInFlight(maxInFlight)
                 .build();
 

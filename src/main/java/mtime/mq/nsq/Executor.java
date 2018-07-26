@@ -20,7 +20,7 @@ public interface Executor {
     void shutdown();
 
     class DefaultImpl implements Executor {
-        private static final int DEFAULT_THREADS = Runtime.getRuntime().availableProcessors() * 2;
+        private static final int DEFAULT_THREADS = Runtime.getRuntime().availableProcessors();
         private final ThreadPoolExecutor executor;
         private final int threads;
 

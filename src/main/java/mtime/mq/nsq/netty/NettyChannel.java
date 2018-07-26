@@ -42,7 +42,6 @@ public class NettyChannel extends AbstractChannel implements Channel {
         } catch (Exception e) {
             throw new NSQException("identify failed", e);
         }
-        log.debug("NettyChannel created, total: {}", instanceCount.incrementAndGet());
         return nettyChannel;
     }
 
@@ -50,6 +49,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
         super(serverAddress, config);
         this.channel = channel;
         channel.attr(CHANNEL_KEY).set(this);
+        log.debug("NettyChannel created, total: {}", instanceCount.incrementAndGet());
     }
 
     public io.netty.channel.Channel getChannel() {
