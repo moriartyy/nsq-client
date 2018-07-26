@@ -9,9 +9,7 @@ public interface ChannelPool extends Closeable {
 
     Channel acquire();
 
-
     void release(Channel channel);
-
 
     void close();
 

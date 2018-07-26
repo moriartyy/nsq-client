@@ -21,9 +21,11 @@ import java.util.stream.Collectors;
 public class Producer implements Closeable {
 
     private final Map<String /*topic*/, List<ServerAddress>> servers = new ConcurrentHashMap<>();
-    private final Map<String /*topic*/, AtomicInteger> roundRobinCounts = new ConcurrentHashMap<>();
+    private final Map<String /*topic*/, AtomicInteger> roundRobins = new ConcurrentHashMap<>();
     private final ProducerConfig config;
     private final Map<ServerAddress, ChannelPool> pools = new ConcurrentHashMap<>();
+    private final Set<ServerAddress> blacklist = new ConcurrentSkipListSet<>();
+    private final Map<ServerAddress, AtomicInteger> errorCounters = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(DaemonThreadFactory.create("nsqProducerScheduler"));
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final AtomicInteger pendingCommands = new AtomicInteger(0);
@@ -76,6 +78,7 @@ public class Producer implements Closeable {
             if (found.isEmpty()) {
                 return;
             }
+            found.removeAll(blacklist);
             this.servers.put(topic, found);
         });
     }
@@ -85,13 +88,40 @@ public class Producer implements Closeable {
     }
 
     private Channel acquire(String topic) throws NoConnectionsException {
-        ServerAddress address = nextServer(topic);
-        return acquire(address);
+        ServerAddress server = nextServer(topic);
+        try {
+            return acquire(server);
+        } catch (Exception e) {
+            int errorCount = countError(server);
+            if (errorCount > 3) {
+                halt(server);
+            }
+            throw e;
+        }
+    }
+
+    private int countError(ServerAddress server) {
+        return this.errorCounters.computeIfAbsent(server, s -> new AtomicInteger()).incrementAndGet();
+    }
+
+    private void halt(ServerAddress server) {
+        this.blacklist.add(server);
+        this.scheduler.schedule(() -> this.blacklist.remove(server), 10, TimeUnit.MINUTES);
+
+        this.servers.values().forEach(ss -> ss.remove(server));
+
+        ChannelPool pool = this.pools.remove(server);
+        if (pool != null) {
+            CloseableUtils.closeQuietly(pool);
+        }
+
+        this.errorCounters.remove(server);
     }
 
     private Channel acquire(ServerAddress server) {
         ChannelPool pool = getPool(server);
         return pool.acquire();
+
     }
 
     private ChannelPool getPool(ServerAddress server) {
@@ -99,12 +129,16 @@ public class Producer implements Closeable {
     }
 
     private ServerAddress nextServer(String topic) {
-        List<ServerAddress> serversOfTopic = servers.computeIfAbsent(topic, this::lookup);
-        if (serversOfTopic.isEmpty()) {
+        List<ServerAddress> servers = serversOfTopic(topic);
+        if (servers.isEmpty()) {
             throw new IllegalStateException("No server configured for topic " + topic);
         }
-        AtomicInteger roundRobinCountForTopic = roundRobinCounts.computeIfAbsent(topic, t -> new AtomicInteger());
-        return serversOfTopic.get(roundRobinCountForTopic.getAndIncrement() % serversOfTopic.size());
+        AtomicInteger roundRobin = roundRobins.computeIfAbsent(topic, t -> new AtomicInteger());
+        return servers.get(roundRobin.incrementAndGet() % servers.size());
+    }
+
+    private List<ServerAddress> serversOfTopic(String topic) {
+        return this.servers.computeIfAbsent(topic, this::lookup);
     }
 
     public void publish(String topic, List<byte[]> messages) throws NSQException {
