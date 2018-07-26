@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.lookup.Lookup;
+import mtime.mq.nsq.lookup.SafeLookup;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -51,5 +52,9 @@ public class Config {
     private long responseTimeoutMillis = 5000L;
     private long sendTimeoutMillis = 1000L;
     private int responseQueueSize = 100;
+
+    public void setLookup(Lookup lookup) {
+        this.lookup = SafeLookup.from(lookup);
+    }
 
 }

@@ -12,10 +12,7 @@ import mtime.mq.nsq.support.DaemonThreadFactory;
 
 import java.io.Closeable;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -23,7 +20,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class Producer implements Closeable {
 
-    private final Map<String /*topic*/, ServerAddress[]> servers = new ConcurrentHashMap<>();
+    private final Map<String /*topic*/, List<ServerAddress>> servers = new ConcurrentHashMap<>();
     private final Map<String /*topic*/, AtomicInteger> roundRobinCounts = new ConcurrentHashMap<>();
     private final ProducerConfig config;
     private final Map<ServerAddress, ChannelPool> pools = new ConcurrentHashMap<>();
@@ -60,7 +57,7 @@ public class Producer implements Closeable {
 
     private void closePoolsOfObsoletedServers() {
         Set<ServerAddress> totalAddresses = this.servers.values().stream()
-                .flatMap(Arrays::stream).collect(Collectors.toSet());
+                .flatMap(Collection::stream).collect(Collectors.toSet());
 
         Set<ServerAddress> obsoletedAddresses = this.pools.keySet().stream()
                 .filter(s -> !totalAddresses.contains(s)).collect(Collectors.toSet());
@@ -75,23 +72,16 @@ public class Producer implements Closeable {
 
     private void updateServerAddresses() {
         this.servers.keySet().forEach(topic -> {
-            ServerAddress[] found = lookup(topic);
-            if (found.length == 0) {
+            List<ServerAddress> found = lookup(topic);
+            if (found.isEmpty()) {
                 return;
             }
             this.servers.put(topic, found);
         });
     }
 
-    private ServerAddress[] lookup(String topic) {
-        try {
-            Set<ServerAddress> servers = this.lookup.lookup(topic);
-            log.debug("lookup servers for topic {} : {}", topic, servers);
-            return servers.toArray(new ServerAddress[0]);
-        } catch (Exception e) {
-            log.error("Look up servers for topic '{}' failed", e);
-            return new ServerAddress[0];
-        }
+    private List<ServerAddress> lookup(String topic) {
+        return new CopyOnWriteArrayList<>(this.lookup.lookup(topic));
     }
 
     private Channel acquire(String topic) throws NoConnectionsException {
@@ -109,12 +99,12 @@ public class Producer implements Closeable {
     }
 
     private ServerAddress nextServer(String topic) {
-        ServerAddress[] serversOfTopic = servers.computeIfAbsent(topic, this::lookup);
-        if (serversOfTopic.length == 0) {
+        List<ServerAddress> serversOfTopic = servers.computeIfAbsent(topic, this::lookup);
+        if (serversOfTopic.isEmpty()) {
             throw new IllegalStateException("No server configured for topic " + topic);
         }
         AtomicInteger roundRobinCountForTopic = roundRobinCounts.computeIfAbsent(topic, t -> new AtomicInteger());
-        return serversOfTopic[roundRobinCountForTopic.getAndIncrement() % serversOfTopic.length];
+        return serversOfTopic.get(roundRobinCountForTopic.getAndIncrement() % serversOfTopic.size());
     }
 
     public void publish(String topic, List<byte[]> messages) throws NSQException {

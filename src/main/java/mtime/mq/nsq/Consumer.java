@@ -104,7 +104,7 @@ public class Consumer implements Closeable {
 
     private void updateSubscription(Subscription subscription, List<Channel> channels, boolean isNewSubscription) {
 
-        Set<ServerAddress> found = lookup(subscription.getTopic());
+        Set<ServerAddress> found = this.lookup.lookup(subscription.getTopic());
 
         if (found.isEmpty()) {
             log.error("No servers found for topic '{}'", subscription.getTopic());
@@ -185,17 +185,6 @@ public class Consumer implements Closeable {
             // close channels
             channels.forEach(CloseableUtils::closeQuietly);
         });
-    }
-
-    private Set<ServerAddress> lookup(String topic) {
-        try {
-            Set<ServerAddress> servers = this.lookup.lookup(topic);
-            log.debug("lookup servers for topic {}: {}", topic, servers);
-            return servers;
-        } catch (Exception e) {
-            log.error("Look up servers for topic '{}' failed", e);
-            return Collections.emptySet();
-        }
     }
 
     @Override
