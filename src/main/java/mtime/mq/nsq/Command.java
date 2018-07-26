@@ -131,8 +131,8 @@ public class Command {
         if (config.getOutputBufferSize() != null) {
             builder.append("\"output_buffer_size\":").append(config.getOutputBufferSize()).append(", ");
         }
-        if (config.getOutputBufferTimeoutInMillis() != null) {
-            builder.append("\"output_buffer_timeout\":").append(config.getOutputBufferTimeoutInMillis()).append(", ");
+        if (config.getOutputBufferTimeoutMillis() != null) {
+            builder.append("\"output_buffer_timeout\":").append(config.getOutputBufferTimeoutMillis()).append(", ");
         }
         if (config.isTlsV1()) {
             builder.append("\"tls_v1\":").append(config.isTlsV1()).append(", ");
@@ -149,8 +149,8 @@ public class Command {
         if (config.getSampleRate() != null) {
             builder.append("\"sample_rate\":").append(config.getSampleRate()).append(", ");
         }
-        if (config.getMsgTimeoutInMillis() != null) {
-            builder.append("\"msg_timeout\":").append(config.getMsgTimeoutInMillis()).append(", ");
+        if (config.getMsgTimeoutMillis() != null) {
+            builder.append("\"msg_timeout\":").append(config.getMsgTimeoutMillis()).append(", ");
         }
         builder.append("\"user_agent\": \"").append(config.getUserAgent()).append("\"}");
         return builder.toString();

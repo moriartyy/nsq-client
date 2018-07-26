@@ -28,12 +28,6 @@ public class Config {
 
     private static String DEFAULT_CLIENT_ID;
     private static String DEFAULT_HOST_NAME;
-    public static final int DEFAULT_SOCKET_THREADS = Runtime.getRuntime().availableProcessors();
-
-    public static final int DISABLE_SAMPLE_RATE = 0;
-    public static final long LOOKUP_PERIOD_NEVER = 0L;
-    public static final long DEFAULT_LOOKUP_PERIOD_IN_MILLIS = 60 * 1000L;
-    public static final long DEFAULT_HEARTBEAT_TIMEOUT_IM_MILLIS = 60 * 1000L;
 
     public enum Compression {NO_COMPRESSION, DEFLATE, SNAPPY}
 
@@ -41,18 +35,21 @@ public class Config {
     private String hostname = DEFAULT_HOST_NAME;
     private boolean featureNegotiation = true;
     private Integer heartbeatIntervalInMillis = null;
-    private long heartbeatTimeoutInMillis = DEFAULT_HEARTBEAT_TIMEOUT_IM_MILLIS;
+    private long heartbeatTimeoutInMillis = 60 * 1000L;
     private Integer outputBufferSize = null;
-    private Integer outputBufferTimeoutInMillis = null;
+    private Integer outputBufferTimeoutMillis = null;
     private boolean tlsV1 = false;
     private Compression compression = Compression.NO_COMPRESSION;
     private Integer deflateLevel = null;
-    private Integer sampleRate = DISABLE_SAMPLE_RATE;
+    private Integer sampleRate = 0;
     private String userAgent = "JavaClient/0.1";
-    private Integer msgTimeoutInMillis = null;
+    private Integer msgTimeoutMillis = null;
     private SslContext sslContext = null;
     private Lookup lookup;
-    private long lookupPeriodMills = DEFAULT_LOOKUP_PERIOD_IN_MILLIS;
-    private int socketThreads = DEFAULT_SOCKET_THREADS;
+    private long lookupPeriodMillis = 60 * 1000L;
+    private int socketThreads = 2;
+    private long responseTimeoutMillis = 5000L;
+    private long sendTimeoutMillis = 1000L;
+    private int responseQueueSize = 100;
 
 }

@@ -28,7 +28,7 @@ public class NettyChannelPool implements ChannelPool {
                 new NettyChannelPoolHandler(),
                 ChannelHealthChecker.ACTIVE,
                 FixedChannelPool.AcquireTimeoutAction.FAIL, config.getConnectionTimeoutMillis(),
-                config.getMaxConnectionsPerServer(), 100);
+                config.getConnectionsPerServer(), 100);
     }
 
     @Override

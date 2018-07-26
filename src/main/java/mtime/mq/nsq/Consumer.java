@@ -31,9 +31,9 @@ public class Consumer implements Closeable {
         validateConfig(config);
         this.config = config;
         this.lookup = config.getLookup();
-        if (this.config.getLookupPeriodMills() != Config.LOOKUP_PERIOD_NEVER) {
+        if (this.config.getLookupPeriodMillis() > 0) {
             this.scheduler.scheduleAtFixedRate(this::maintenanceSubscriptions,
-                    this.config.getLookupPeriodMills(), this.config.getLookupPeriodMills(), TimeUnit.MILLISECONDS);
+                    this.config.getLookupPeriodMillis(), this.config.getLookupPeriodMillis(), TimeUnit.MILLISECONDS);
         }
     }
 

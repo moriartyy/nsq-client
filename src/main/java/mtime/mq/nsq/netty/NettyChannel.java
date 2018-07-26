@@ -67,10 +67,14 @@ public class NettyChannel extends AbstractChannel implements Channel {
     }
 
     @Override
-    protected void doSend(Command command) {
+    protected void doSend(Command command, long sendTimeoutMillis) {
         ChannelFuture future = this.channel.writeAndFlush(command);
-        if (!future.awaitUninterruptibly().isSuccess()) {
-            throw new NSQException("Send command failed", future.cause());
+        if (future.awaitUninterruptibly(sendTimeoutMillis)) {
+            if (!future.isSuccess()) {
+                throw new NSQException("Send failed", future.cause());
+            }
+        } else {
+            throw new NSQException("Send timeout");
         }
     }
 }

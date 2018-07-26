@@ -20,19 +20,24 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Slf4j
 public abstract class AbstractChannel implements Channel {
-    private final long heartbeatTimeoutInMillis;
-    private final BlockingDeque<ResponseHandler> responseHandlers = new LinkedBlockingDeque<>(10);
+    private final long heartbeatTimeoutMillis;
+    private final BlockingDeque<ResponseHandler> responseHandlers;
     private final ServerAddress serverAddress;
     private final Config config;
+    private final long responseTimeoutMillis;
+    private final long sendTimeoutMillis;
     private MessageHandler messageHandler;
     private final AtomicInteger inFlight = new AtomicInteger();
     private volatile int readyCount = 0;
-    private volatile long lastHeartbeatTime;
+    private volatile long lastHeartbeatTimeMillis;
 
     public AbstractChannel(ServerAddress serverAddress, Config config) {
         this.serverAddress = serverAddress;
         this.config = config;
-        this.heartbeatTimeoutInMillis = this.config.getHeartbeatTimeoutInMillis();
+        this.responseTimeoutMillis = this.config.getResponseTimeoutMillis();
+        this.heartbeatTimeoutMillis = this.config.getHeartbeatTimeoutInMillis();
+        this.responseHandlers = new LinkedBlockingDeque<>(this.config.getResponseQueueSize());
+        this.sendTimeoutMillis = this.config.getSendTimeoutMillis();
     }
 
     @Override
@@ -69,7 +74,7 @@ public abstract class AbstractChannel implements Channel {
     public void send(Command command) throws NSQException {
         log.debug("Sending command {}", command.getLine());
         try {
-            doSend(command);
+            doSend(command, this.sendTimeoutMillis);
         } catch (NSQException e) {
             throw e;
         } catch (Exception e1) {
@@ -77,29 +82,26 @@ public abstract class AbstractChannel implements Channel {
         }
     }
 
-    protected abstract void doSend(Command command);
+    protected abstract void doSend(Command command, long sendTimeoutMillis);
 
     @Override
     public synchronized Response sendAndWait(Command command) throws NSQException {
-        ResponseHandler responseHandler = new ResponseHandler();
+        ResponseHandler responseHandler = new ResponseHandler(System.currentTimeMillis() + responseTimeoutMillis);
+
         queueResponseHandler(responseHandler);
 
         try {
             send(command);
-        } catch (NSQException e) {
-            dequeueResponseHandler(responseHandler);
-            throw e;
+        } catch (Exception e) {
+            this.close();
+            throw (e instanceof NSQException ? (NSQException) e : new NSQException("Error happened while sending command", e));
         }
 
         return responseHandler.getResponse();
     }
 
-    private void dequeueResponseHandler(ResponseHandler responseHandler) {
-        this.responseHandlers.pollLast();
-    }
-
     private boolean isHeartbeatTimeout() {
-        return System.currentTimeMillis() - this.lastHeartbeatTime > this.heartbeatTimeoutInMillis;
+        return System.currentTimeMillis() - this.lastHeartbeatTimeMillis < this.heartbeatTimeoutMillis;
     }
 
     private void queueResponseHandler(ResponseHandler responseHandler) {
@@ -155,7 +157,7 @@ public abstract class AbstractChannel implements Channel {
     }
 
     private void handleHeartbeat() {
-        this.lastHeartbeatTime = System.currentTimeMillis();
+        this.lastHeartbeatTimeMillis = System.currentTimeMillis();
         send(Command.NOP);
     }
 
@@ -196,10 +198,12 @@ public abstract class AbstractChannel implements Channel {
     }
 
     class ResponseHandler {
+        private final long deadline;
         private CountDownLatch latch = new CountDownLatch(1);
         private Response response;
 
-        ResponseHandler() {
+        ResponseHandler(long deadline) {
+            this.deadline = deadline;
         }
 
         void onResponse(Response response) {
@@ -208,13 +212,20 @@ public abstract class AbstractChannel implements Channel {
         }
 
         Response getResponse() throws NSQException {
+            long waitTime = deadline - System.currentTimeMillis();
+
+            if (waitTime <= 0L) {
+                throw new NSQException("No response returned before timeout");
+            }
+
             try {
-                if (!latch.await(10, TimeUnit.SECONDS)) {
+                if (!latch.await(waitTime, TimeUnit.MILLISECONDS)) {
                     throw new NSQException("No response returned before timeout");
                 }
             } catch (InterruptedException e) {
                 throw new NSQException("Get response is interrupted");
             }
+
             return this.response;
         }
     }

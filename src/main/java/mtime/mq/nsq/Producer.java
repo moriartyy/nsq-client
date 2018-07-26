@@ -39,9 +39,9 @@ public class Producer implements Closeable {
 
         this.config = config;
 
-        if (this.config.getLookupPeriodMills() != Config.LOOKUP_PERIOD_NEVER) {
+        if (this.config.getLookupPeriodMillis() > 0) {
             this.scheduler.scheduleAtFixedRate(this::updateServers,
-                    config.getLookupPeriodMills(), config.getLookupPeriodMills(), TimeUnit.MILLISECONDS);
+                    config.getLookupPeriodMillis(), config.getLookupPeriodMillis(), TimeUnit.MILLISECONDS);
 
         }
     }
