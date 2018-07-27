@@ -1,26 +1,42 @@
 package mtime.mq.nsq.lookup;
 
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
+import mtime.mq.nsq.ServerAddress;
 
 import java.util.Collections;
+import java.util.Set;
 
 /**
  * @author walter
  */
 public interface SafeLookup extends Lookup {
 
-
     static Lookup from(Lookup lookup) {
         if (lookup instanceof SafeLookup) {
             return lookup;
         }
-        return (SafeLookup) topic -> {
+        return new Wrapper(lookup);
+    }
+
+    @Slf4j
+    class Wrapper implements SafeLookup {
+
+        private Lookup lookup;
+
+        Wrapper(Lookup lookup) {
+            this.lookup = lookup;
+        }
+
+        @Override
+        public Set<ServerAddress> lookup(String topic) {
+            Set<ServerAddress> servers = Collections.emptySet();
             try {
-                return lookup.lookup(topic);
+                servers = lookup.lookup(topic);
             } catch (Exception e) {
-                LoggerFactory.getLogger(SafeLookup.class).error("Lookup for topic '{}' failed", topic, e);
+                log.error("Lookup for topic '{}' failed", topic, e);
             }
-            return Collections.emptySet();
-        };
+            log.debug("Lookup for topic '{}' found: {}", topic, servers);
+            return servers;
+        }
     }
 }

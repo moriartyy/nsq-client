@@ -50,7 +50,7 @@ public class HttpLookup implements Lookup {
                     addresses.add(address);
                 }
             } catch (IOException e) {
-                log.warn("Unable to connect to address {} for topic {}", lookupServerAddress, topic, e);
+                log.warn("Unable to connect to address {} for topic {}, reason: {}", lookupServerAddress, topic, e);
             }
         }
 

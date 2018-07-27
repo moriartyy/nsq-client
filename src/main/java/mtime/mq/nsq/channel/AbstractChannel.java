@@ -72,7 +72,7 @@ public abstract class AbstractChannel implements Channel {
 
     @Override
     public void send(Command command) throws NSQException {
-        log.debug("Send command: {}", command.getLine());
+        log.debug("Send command: '{}' to {}", command.getLine(), getRemoteAddress());
         try {
             doSend(command, this.sendTimeoutMillis);
         } catch (Exception e) {

@@ -23,7 +23,8 @@ public class Consumer implements Closeable {
     private final ConsumerConfig config;
     private final Map<Subscription, List<Channel>> subscriptions = new ConcurrentHashMap<>();
 
-    private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(DaemonThreadFactory.create("nsqConsumerScheduler"));
+    private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
+            DaemonThreadFactory.create("nsqConsumerScheduler"));
     private final Lookup lookup;
 
     public Consumer(ConsumerConfig config) {
@@ -31,9 +32,10 @@ public class Consumer implements Closeable {
         this.config = config;
         this.lookup = config.getLookup();
         if (this.config.getLookupPeriodMillis() > 0) {
-            this.scheduler.scheduleAtFixedRate(this::maintenanceSubscriptions,
+            this.scheduler.scheduleAtFixedRate(this::updateSubscriptions,
                     this.config.getLookupPeriodMillis(), this.config.getLookupPeriodMillis(), TimeUnit.MILLISECONDS);
         }
+        this.scheduler.scheduleAtFixedRate(this::reconnectToDisconnectedServers, 1, 1, TimeUnit.MINUTES);
     }
 
     private Executor newExecutor(int threads) {
@@ -66,17 +68,17 @@ public class Consumer implements Closeable {
 
     private void initSubscription(Subscription subscription) {
         updateSubscription(
-                subscription, subscriptions.computeIfAbsent(subscription, s -> new CopyOnWriteArrayList<>()), true);
+                subscription, subscriptions.computeIfAbsent(subscription, s -> new CopyOnWriteArrayList<>()));
     }
 
     private void validateConfig(ConsumerConfig config) {
         Objects.requireNonNull(config.getLookup(), "lookup");
     }
 
-    private void maintenanceSubscriptions() {
+    private void updateSubscriptions() {
         subscriptions.forEach((subscription, channels) -> {
             try {
-                updateSubscription(subscription, channels, false);
+                updateSubscription(subscription, channels);
             } catch (Exception e) {
                 log.error("Exception caught while maintenance subscription(topic={}, channel={})",
                         subscription.getTopic(), subscription.getChannel(), e);
@@ -102,7 +104,7 @@ public class Consumer implements Closeable {
         });
     }
 
-    private void updateSubscription(Subscription subscription, List<Channel> channels, boolean isNewSubscription) {
+    private void updateSubscription(Subscription subscription, List<Channel> channels) {
 
         Set<ServerAddress> found = this.lookup.lookup(subscription.getTopic());
 
@@ -110,19 +112,17 @@ public class Consumer implements Closeable {
             log.error("No servers found for topic '{}'", subscription.getTopic());
         } else {
             disconnectAndRemoveObsoletedServers(found, channels);
-            connectToAbsentServers(subscription, found, channels);
-        }
-
-        if (!isNewSubscription) {
-            reconnectToDisconnectedServers(subscription, channels);
+            connectToNewlyDiscoveredServers(subscription, found, channels);
         }
 
         updateReadyCountForChannels(subscription.getMaxInFlight(), channels);
     }
 
-    private void reconnectToDisconnectedServers(Subscription subscription, List<Channel> channels) {
-        List<ServerAddress> disconnectedServers = removeDisconnectedServers(channels);
-        disconnectedServers.forEach(s -> tryCreateChannel(subscription, s, channels));
+    private void reconnectToDisconnectedServers() {
+        this.subscriptions.forEach((subscription, channels) -> {
+            List<ServerAddress> disconnectedServers = removeDisconnectedServers(channels);
+            disconnectedServers.forEach(s -> tryCreateChannel(subscription, s, channels));
+        });
     }
 
     private List<ServerAddress> removeDisconnectedServers(List<Channel> channels) {
@@ -134,26 +134,31 @@ public class Consumer implements Closeable {
         return disconnectedChannels.stream().map(Channel::getRemoteAddress).collect(Collectors.toList());
     }
 
-    private void connectToAbsentServers(Subscription subscription, Set<ServerAddress> servers, List<Channel> channels) {
-        Set<ServerAddress> absentServers = new HashSet<>(servers);
-        channels.forEach(c -> absentServers.remove(c.getRemoteAddress()));
+    private void connectToNewlyDiscoveredServers(Subscription subscription, Set<ServerAddress> servers, List<Channel> channels) {
+        Set<ServerAddress> currentServers = channels.stream()
+                .map(Channel::getRemoteAddress).collect(Collectors.toSet());
 
-        absentServers.forEach(s -> tryCreateChannel(subscription, s, channels));
+        Set<ServerAddress> newServers = servers.stream()
+                .filter(s -> !currentServers.contains(s)).collect(Collectors.toSet());
+
+        newServers.forEach(s -> tryCreateChannel(subscription, s, channels));
     }
 
-    private void tryCreateChannel(Subscription subscription, ServerAddress s, List<Channel> channels) {
+    private boolean tryCreateChannel(Subscription subscription, ServerAddress s, List<Channel> channels) {
         try {
             channels.add(createChannel(subscription, s));
+            return true;
         } catch (Exception e) {
             log.error("Failed to open channel from address {}", s, e);
         }
+        return false;
     }
 
     private void disconnectAndRemoveObsoletedServers(Set<ServerAddress> servers, List<Channel> channels) {
         List<Channel> obsoletedChannels = channels.stream()
                 .filter(c -> !servers.contains(c.getRemoteAddress())).collect(Collectors.toList());
 
-        obsoletedChannels.forEach(CloseableUtils::closeQuietly);
+        obsoletedChannels.forEach(this::closeChannel);
 
         channels.removeAll(obsoletedChannels);
     }
@@ -170,21 +175,39 @@ public class Consumer implements Closeable {
 
     private void closeSubscriptions() {
         this.subscriptions.forEach((subscription, channels) -> {
-
-            // send "CLS" to nsq, so nsq will stop pushing messages
-            channels.forEach(channel -> {
-                Response response = channel.sendClose();
-                if (response.getStatus() == Response.Status.ERROR) {
-                    log.error("Clean close failed, reason: {}", response.getMessage());
-                }
-            });
-
-            // waiting for received messages to be processed
+            channels.forEach(this::closeChannel);
             subscription.getExecutor().shutdown();
-
-            // close channels
-            channels.forEach(CloseableUtils::closeQuietly);
         });
+    }
+
+    private void closeChannel(Channel channel) {
+        log.debug("Closing channel with remote address {}", channel.getRemoteAddress());
+        sendClose(channel);
+        waitInFlightMessageToBeProcessed(channel);
+        CloseableUtils.closeQuietly(channel);
+        log.debug("Channel with remote address {} closed", channel.getRemoteAddress());
+    }
+
+    private void waitInFlightMessageToBeProcessed(Channel channel) {
+        long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(10);
+        while (channel.getInFlight() > 0 && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                break;
+            }
+        }
+    }
+
+    private void sendClose(Channel channel) {
+        try {
+            Response response = channel.sendClose();
+            if (response.getStatus() == Response.Status.ERROR) {
+                log.error("Clean close failed, reason: {}", response.getMessage());
+            }
+        } catch (Exception e) {
+            log.error("Send close to channel caught exception", e);
+        }
     }
 
     @Override
@@ -267,8 +290,8 @@ public class Consumer implements Closeable {
                 try {
                     this.handler.process(message);
                 } catch (Exception e) {
-                    log.error("Process message failed, id={}, topic={}, channel={}",
-                            new String(message.getId()), this.topic, this.channel, e);
+                    log.error("Process message failed, id={}, topic={}, channel={}, server={}",
+                            new String(message.getId()), this.topic, this.channel, message.getChannel(), e);
                 }
             });
         }
