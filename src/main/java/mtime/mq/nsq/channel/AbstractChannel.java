@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public abstract class AbstractChannel implements Channel {
     private final long heartbeatTimeoutMillis;
     private final BlockingDeque<ResponseHandler> responseHandlers;
-    private final ServerAddress serverAddress;
+    private final ServerAddress remoteAddress;
     private final long responseTimeoutMillis;
     private final long sendTimeoutMillis;
     private MessageHandler messageHandler;
@@ -30,8 +30,8 @@ public abstract class AbstractChannel implements Channel {
     private volatile int readyCount = 0;
     private volatile long lastHeartbeatTimeMillis;
 
-    public AbstractChannel(ServerAddress serverAddress, Config config) {
-        this.serverAddress = serverAddress;
+    public AbstractChannel(ServerAddress remoteAddress, Config config) {
+        this.remoteAddress = remoteAddress;
         this.responseTimeoutMillis = config.getResponseTimeoutMillis();
         this.heartbeatTimeoutMillis = config.getHeartbeatTimeoutInMillis();
         this.responseHandlers = new LinkedBlockingDeque<>(config.getResponseQueueSize());
@@ -55,7 +55,7 @@ public abstract class AbstractChannel implements Channel {
 
     @Override
     public ServerAddress getRemoteAddress() {
-        return serverAddress;
+        return remoteAddress;
     }
 
     @Override
@@ -65,7 +65,7 @@ public abstract class AbstractChannel implements Channel {
 
     @Override
     public void send(Command command) throws NSQException {
-        log.debug("Send command: '{}' to {}", command.getLine(), getRemoteAddress());
+        log.debug("Send command: '{}' to {}", command.getLine(), this.remoteAddress);
         try {
             doSend(command, this.sendTimeoutMillis);
         } catch (Exception e) {
@@ -101,7 +101,7 @@ public abstract class AbstractChannel implements Channel {
 
     private void queueResponseHandler(ResponseHandler responseHandler) {
         if (!responseHandlers.offer(responseHandler)) {
-            throw new NSQException("Too many commands");
+            throw new NSQException("Too many commands to " + remoteAddress);
         }
     }
 
@@ -143,7 +143,7 @@ public abstract class AbstractChannel implements Channel {
     }
 
     private void receiveResponseFrame(ResponseFrame response) {
-        log.debug("Received response: {}", response.getMessage());
+        log.debug("Received response: {} from {}", response.getMessage(), this.remoteAddress);
         if (response.isHeartbeat()) {
             handleHeartbeat();
         } else {
@@ -158,7 +158,7 @@ public abstract class AbstractChannel implements Channel {
 
     private void receiveMessageFrame(MessageFrame message) {
         if (log.isDebugEnabled()) {
-            log.debug("Received message: {}", new String(message.getMessageId()));
+            log.debug("Received message: {} from {}", new String(message.getMessageId()), this.remoteAddress);
         }
 
         if (messageHandler == null) {
@@ -210,12 +210,12 @@ public abstract class AbstractChannel implements Channel {
             long waitTime = deadline - System.currentTimeMillis();
 
             if (waitTime <= 0L) {
-                throw new NSQException("No response returned before timeout");
+                throw new NSQException("No response returned before timeout from " + remoteAddress);
             }
 
             try {
                 if (!latch.await(waitTime, TimeUnit.MILLISECONDS)) {
-                    throw new NSQException("No response returned before timeout");
+                    throw new NSQException("No response returned before timeout from " + remoteAddress);
                 }
             } catch (InterruptedException e) {
                 throw new NSQException("Get response is interrupted");

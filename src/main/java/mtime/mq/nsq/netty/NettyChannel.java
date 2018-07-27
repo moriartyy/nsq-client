@@ -40,7 +40,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
                 throw new IllegalStateException(response.getMessage());
             }
         } catch (Exception e) {
-            throw new NSQException("identify failed", e);
+            throw new NSQException("identify failed with  " + serverAddress, e);
         }
         return nettyChannel;
     }
@@ -49,7 +49,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
         super(serverAddress, config);
         this.channel = channel;
         channel.attr(CHANNEL_KEY).set(this);
-        log.debug("NettyChannel created, total: {}", instanceCount.incrementAndGet());
+        log.debug("NettyChannel created, server: {} total: {}", serverAddress, instanceCount.incrementAndGet());
     }
 
     public io.netty.channel.Channel getChannel() {
@@ -71,10 +71,10 @@ public class NettyChannel extends AbstractChannel implements Channel {
         ChannelFuture future = this.channel.writeAndFlush(command);
         if (future.awaitUninterruptibly(sendTimeoutMillis)) {
             if (!future.isSuccess()) {
-                throw new NSQException("Send failed", future.cause());
+                throw new NSQException("Send command '" + command.getLine() + "' failed to " + getRemoteAddress(), future.cause());
             }
         } else {
-            throw new NSQException("Send timeout");
+            throw new NSQException("Send command '" + command.getLine() + "' timeout to " + getRemoteAddress());
         }
     }
 }
