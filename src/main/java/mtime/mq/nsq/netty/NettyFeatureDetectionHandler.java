@@ -10,7 +10,7 @@ import io.netty.handler.codec.compression.ZlibCodecFactory;
 import io.netty.handler.codec.compression.ZlibWrapper;
 import io.netty.handler.ssl.SslHandler;
 import lombok.extern.slf4j.Slf4j;
-import mtime.mq.nsq.channel.Channel;
+import mtime.mq.nsq.Config;
 import mtime.mq.nsq.frames.Frame;
 import mtime.mq.nsq.frames.ResponseFrame;
 
@@ -19,11 +19,16 @@ import javax.net.ssl.SSLEngine;
 @Slf4j
 public class NettyFeatureDetectionHandler extends SimpleChannelInboundHandler<Frame> {
 
+    private final Config config;
     private boolean ssl;
     private boolean compression;
     private boolean snappy;
     private boolean deflate;
     private boolean finished;
+
+    public NettyFeatureDetectionHandler(Config config) {
+        this.config = config;
+    }
 
     @Override
     protected void channelRead0(final ChannelHandlerContext ctx, final Frame msg) throws Exception {
@@ -32,7 +37,6 @@ public class NettyFeatureDetectionHandler extends SimpleChannelInboundHandler<Fr
         if (msg instanceof ResponseFrame) {
             ResponseFrame response = (ResponseFrame) msg;
             ChannelPipeline pipeline = ctx.channel().pipeline();
-            final Channel channel = ctx.channel().attr(NettyChannel.CHANNEL_KEY).get();
             parseIdentify(response.getMessage());
 
             if (response.getMessage().equals("OK")) {
@@ -54,7 +58,7 @@ public class NettyFeatureDetectionHandler extends SimpleChannelInboundHandler<Fr
             }
             if (ssl) {
                 log.info("Adding SSL to pipline");
-                SSLEngine sslEngine = channel.getConfig().getSslContext().newEngine(ctx.channel().alloc());
+                SSLEngine sslEngine = this.config.getSslContext().newEngine(ctx.channel().alloc());
                 sslEngine.setUseClientMode(true);
                 SslHandler sslHandler = new SslHandler(sslEngine, false);
                 sslHandler.setSingleDecode(true);
@@ -64,7 +68,7 @@ public class NettyFeatureDetectionHandler extends SimpleChannelInboundHandler<Fr
                 }
                 if (deflate) {
                     pipeline.addBefore("NSQEncoder", "DeflateEncoder", ZlibCodecFactory.newZlibEncoder(ZlibWrapper.NONE,
-                            channel.getConfig().getDeflateLevel()));
+                            this.config.getDeflateLevel()));
                 }
             }
             if (!ssl && snappy) {
@@ -73,7 +77,7 @@ public class NettyFeatureDetectionHandler extends SimpleChannelInboundHandler<Fr
             }
             if (!ssl && deflate) {
                 pipeline.addBefore("NSQEncoder", "DeflateEncoder", ZlibCodecFactory.newZlibEncoder(ZlibWrapper.NONE,
-                        channel.getConfig().getDeflateLevel()));
+                        this.config.getDeflateLevel()));
                 reinstallDefaultDecoder = installDeflateDecoder(pipeline);
             }
             if (response.getMessage().contains("version") && finished) {

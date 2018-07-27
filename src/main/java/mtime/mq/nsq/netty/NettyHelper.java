@@ -7,6 +7,7 @@ import io.netty.channel.ChannelPipeline;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import mtime.mq.nsq.Config;
 import mtime.mq.nsq.ServerAddress;
 import mtime.mq.nsq.exceptions.NoConnectionsException;
 
@@ -17,20 +18,16 @@ public class NettyHelper {
 
     public static final byte[] MAGIC_PROTOCOL_VERSION = "  V2".getBytes();
 
-    public static Bootstrap createBootstrap(ServerAddress serverAddress) {
-        return createBootstrap(serverAddress, 0);
-    }
-
-    public static Bootstrap createBootstrap(ServerAddress serverAddress, int nThreads) {
+    public static Bootstrap createBootstrap(ServerAddress serverAddress, Config config) {
         Bootstrap bootstrap = new Bootstrap();
-        bootstrap.group(new NioEventLoopGroup(nThreads));
+        bootstrap.group(new NioEventLoopGroup(config.getSocketThreads()));
         bootstrap.channel(NioSocketChannel.class);
-        bootstrap.handler(new NettyChannelInitializer());
+        bootstrap.handler(new NettyChannelInitializer(config));
         bootstrap.remoteAddress(serverAddress.getHost(), serverAddress.getPort());
         return bootstrap;
     }
 
-    public static void initChannel(Channel channel) {
+    public static void initChannel(Channel channel, Config config) {
         ChannelPipeline pipeline = channel.pipeline();
 
         LengthFieldBasedFrameDecoder dec = new LengthFieldBasedFrameDecoder(Integer.MAX_VALUE, 0, Integer.BYTES);
@@ -39,12 +36,12 @@ public class NettyHelper {
         pipeline.addLast("LengthFieldBasedFrameDecoder", dec);
         pipeline.addLast("NSQDecoder", new NettyDecoder()); // in
         pipeline.addLast("NSQEncoder", new NettyEncoder()); // out
-        pipeline.addLast("FeatureDetectionHandler", new NettyFeatureDetectionHandler());
+        pipeline.addLast("FeatureDetectionHandler", new NettyFeatureDetectionHandler(config));
         pipeline.addLast("NSQHandler", new NettyHandler()); // in
     }
 
-    public static Channel openChannel(ServerAddress serverAddress, int socketThreads) {
-        Bootstrap bootstrap = createBootstrap(serverAddress, socketThreads);
+    public static Channel openChannel(ServerAddress serverAddress, Config config) {
+        Bootstrap bootstrap = createBootstrap(serverAddress, config);
         ChannelFuture future = bootstrap.connect();
         future.awaitUninterruptibly();
         if (!future.isSuccess()) {

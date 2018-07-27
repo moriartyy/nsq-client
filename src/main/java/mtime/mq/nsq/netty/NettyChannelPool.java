@@ -7,7 +7,6 @@ import io.netty.channel.pool.ChannelPoolHandler;
 import io.netty.channel.pool.FixedChannelPool;
 import io.netty.util.concurrent.Future;
 import mtime.mq.nsq.Config;
-import mtime.mq.nsq.ProducerConfig;
 import mtime.mq.nsq.ServerAddress;
 import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.channel.ChannelPool;
@@ -21,15 +20,16 @@ public class NettyChannelPool implements ChannelPool {
     private final ServerAddress serverAddress;
     private final Config config;
 
-    public NettyChannelPool(ServerAddress serverAddress, ProducerConfig config) {
+    public NettyChannelPool(ServerAddress serverAddress, Config config,
+                            long connectionTimeoutMillis, int connectionsPerServer) {
         this.serverAddress = serverAddress;
         this.config = config;
         this.channelPool = new FixedChannelPool(
-                NettyHelper.createBootstrap(serverAddress, config.getSocketThreads()),
-                new NettyChannelPoolHandler(),
+                NettyHelper.createBootstrap(serverAddress, config),
+                new NettyChannelPoolHandler(config),
                 new NettyChannelHealthChecker(),
-                FixedChannelPool.AcquireTimeoutAction.FAIL, config.getConnectionTimeoutMillis(),
-                config.getConnectionsPerServer(), 100);
+                FixedChannelPool.AcquireTimeoutAction.FAIL, connectionTimeoutMillis,
+                connectionsPerServer, 100);
     }
 
     @Override
@@ -72,9 +72,15 @@ public class NettyChannelPool implements ChannelPool {
      */
     class NettyChannelPoolHandler extends AbstractChannelPoolHandler implements ChannelPoolHandler {
 
+        private final Config config;
+
+        public NettyChannelPoolHandler(Config config) {
+            this.config = config;
+        }
+
         @Override
         public void channelCreated(io.netty.channel.Channel channel) throws Exception {
-            NettyHelper.initChannel(channel);
+            NettyHelper.initChannel(channel, config);
         }
     }
 

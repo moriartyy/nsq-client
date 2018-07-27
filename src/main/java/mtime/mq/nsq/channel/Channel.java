@@ -1,6 +1,9 @@
 package mtime.mq.nsq.channel;
 
-import mtime.mq.nsq.*;
+import mtime.mq.nsq.Command;
+import mtime.mq.nsq.MessageHandler;
+import mtime.mq.nsq.Response;
+import mtime.mq.nsq.ServerAddress;
 import mtime.mq.nsq.exceptions.NSQException;
 
 import java.io.Closeable;
@@ -13,8 +16,6 @@ public interface Channel extends Closeable {
     int getReadyCount();
 
     int getInFlight();
-
-    Config getConfig();
 
     void setMessageHandler(MessageHandler messageHandler);
 

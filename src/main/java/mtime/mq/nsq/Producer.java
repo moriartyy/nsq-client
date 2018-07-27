@@ -3,10 +3,11 @@ package mtime.mq.nsq;
 import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.channel.ChannelPool;
+import mtime.mq.nsq.channel.ChannelPoolFactory;
 import mtime.mq.nsq.exceptions.NSQException;
 import mtime.mq.nsq.exceptions.NoConnectionsException;
 import mtime.mq.nsq.lookup.Lookup;
-import mtime.mq.nsq.netty.NettyChannelPool;
+import mtime.mq.nsq.netty.NettyChannelPoolFactory;
 import mtime.mq.nsq.support.CloseableUtils;
 import mtime.mq.nsq.support.DaemonThreadFactory;
 
@@ -22,7 +23,6 @@ public class Producer implements Closeable {
 
     private final Map<String /*topic*/, List<ServerAddress>> servers = new ConcurrentHashMap<>();
     private final Map<String /*topic*/, AtomicInteger> roundRobins = new ConcurrentHashMap<>();
-    private final ProducerConfig config;
     private final Map<ServerAddress, ChannelPool> pools = new ConcurrentHashMap<>();
     private final Set<ServerAddress> blacklist = new ConcurrentSkipListSet<>();
     private final Map<ServerAddress, AtomicInteger> errorCounters = new ConcurrentHashMap<>();
@@ -32,14 +32,27 @@ public class Producer implements Closeable {
     private final AtomicInteger pendingCommands = new AtomicInteger(0);
     private final int maxPublishRetries;
     private final Lookup lookup;
+    private final ChannelPoolFactory channelPoolFactory;
+    private final long haltDurationMillis;
+    private final int maxAcquireConnectionErrorCount;
 
     public Producer(ProducerConfig config) {
+        this(config, createChannelPoolFactory(config));
+    }
+
+    private static NettyChannelPoolFactory createChannelPoolFactory(ProducerConfig config) {
+        return new NettyChannelPoolFactory(config, config.getConnectionTimeoutMillis(), config.getConnectionsPerServer());
+    }
+
+    public Producer(ProducerConfig config, ChannelPoolFactory channelPoolFactory) {
         validateConfig(config);
-        this.config = config;
         this.lookup = config.getLookup();
         this.maxPublishRetries = config.getMaxPublishRetries();
+        this.channelPoolFactory = channelPoolFactory;
+        this.haltDurationMillis = config.getHaltDurationMillis();
+        this.maxAcquireConnectionErrorCount = config.getMaxAcquireConnectionErrorCount();
 
-        if (this.config.getLookupPeriodMillis() > 0) {
+        if (config.getLookupPeriodMillis() > 0) {
             this.scheduler.scheduleAtFixedRate(this::updateServers,
                     config.getLookupPeriodMillis(), config.getLookupPeriodMillis(), TimeUnit.MILLISECONDS);
         }
@@ -93,8 +106,8 @@ public class Producer implements Closeable {
         try {
             return acquire(server);
         } catch (Exception e) {
-            if (accumulateError(server) > 3) {
-                burn(server);
+            if (accumulateError(server) >= maxAcquireConnectionErrorCount) {
+                halt(server);
             }
             throw e;
         }
@@ -105,9 +118,11 @@ public class Producer implements Closeable {
         return counter.incrementAndGet();
     }
 
-    private void burn(ServerAddress server) {
+    private void halt(ServerAddress server) {
+        log.debug("Halt server {}", server);
+
         this.blacklist.add(server);
-        this.scheduler.schedule(() -> this.blacklist.remove(server), 10, TimeUnit.MINUTES);
+        this.scheduler.schedule(() -> this.blacklist.remove(server), haltDurationMillis, TimeUnit.MILLISECONDS);
 
         // close pool
         ChannelPool pool = this.pools.remove(server);
@@ -125,15 +140,11 @@ public class Producer implements Closeable {
     }
 
     private ChannelPool getPool(ServerAddress server) {
-        return pools.computeIfAbsent(server, a -> new NettyChannelPool(a, this.config));
+        return pools.computeIfAbsent(server, channelPoolFactory::create);
     }
 
     private ServerAddress nextServer(String topic) {
         List<ServerAddress> servers = serversOfTopic(topic);
-
-        if (!this.blacklist.isEmpty()) {
-            servers.removeAll(this.blacklist);
-        }
 
         if (servers.isEmpty()) {
             throw new IllegalStateException("No server available for topic " + topic);
@@ -144,7 +155,15 @@ public class Producer implements Closeable {
     }
 
     private List<ServerAddress> serversOfTopic(String topic) {
-        return this.servers.computeIfAbsent(topic, this::lookup);
+        List<ServerAddress> servers = this.servers.computeIfAbsent(topic, this::lookup);
+
+        if (!this.blacklist.isEmpty()) {
+            // create a new list, we don't want to remove halt servers from cache
+            servers = new ArrayList<>(servers);
+            servers.removeAll(this.blacklist);
+        }
+
+        return servers;
     }
 
     public void publish(String topic, List<byte[]> messages) throws NSQException {

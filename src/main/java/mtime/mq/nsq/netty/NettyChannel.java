@@ -27,7 +27,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
     private io.netty.channel.Channel channel;
 
     public static NettyChannel open(ServerAddress serverAddress, Config config) {
-        return wrap(NettyHelper.openChannel(serverAddress, config.getSocketThreads()), serverAddress, config);
+        return wrap(NettyHelper.openChannel(serverAddress, config), serverAddress, config);
     }
 
     public static NettyChannel wrap(io.netty.channel.Channel channel, ServerAddress serverAddress, Config config) {

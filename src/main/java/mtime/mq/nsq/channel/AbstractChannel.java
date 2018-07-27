@@ -23,7 +23,6 @@ public abstract class AbstractChannel implements Channel {
     private final long heartbeatTimeoutMillis;
     private final BlockingDeque<ResponseHandler> responseHandlers;
     private final ServerAddress serverAddress;
-    private final Config config;
     private final long responseTimeoutMillis;
     private final long sendTimeoutMillis;
     private MessageHandler messageHandler;
@@ -33,11 +32,10 @@ public abstract class AbstractChannel implements Channel {
 
     public AbstractChannel(ServerAddress serverAddress, Config config) {
         this.serverAddress = serverAddress;
-        this.config = config;
-        this.responseTimeoutMillis = this.config.getResponseTimeoutMillis();
-        this.heartbeatTimeoutMillis = this.config.getHeartbeatTimeoutInMillis();
-        this.responseHandlers = new LinkedBlockingDeque<>(this.config.getResponseQueueSize());
-        this.sendTimeoutMillis = this.config.getSendTimeoutMillis();
+        this.responseTimeoutMillis = config.getResponseTimeoutMillis();
+        this.heartbeatTimeoutMillis = config.getHeartbeatTimeoutInMillis();
+        this.responseHandlers = new LinkedBlockingDeque<>(config.getResponseQueueSize());
+        this.sendTimeoutMillis = config.getSendTimeoutMillis();
     }
 
     @Override
@@ -48,11 +46,6 @@ public abstract class AbstractChannel implements Channel {
     @Override
     public int getReadyCount() {
         return readyCount;
-    }
-
-    @Override
-    public Config getConfig() {
-        return config;
     }
 
     @Override
