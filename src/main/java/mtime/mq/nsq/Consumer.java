@@ -6,9 +6,10 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.channel.Channel;
+import mtime.mq.nsq.channel.ChannelFactory;
 import mtime.mq.nsq.exceptions.NSQException;
 import mtime.mq.nsq.lookup.Lookup;
-import mtime.mq.nsq.netty.NettyChannel;
+import mtime.mq.nsq.netty.NettyChannelFactory;
 import mtime.mq.nsq.support.CloseableUtils;
 import mtime.mq.nsq.support.DaemonThreadFactory;
 
@@ -26,11 +27,17 @@ public class Consumer implements Closeable {
     private ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             DaemonThreadFactory.create("nsqConsumerScheduler"));
     private final Lookup lookup;
+    private final ChannelFactory channelFactory;
 
     public Consumer(ConsumerConfig config) {
+        this(config, new NettyChannelFactory(config));
+    }
+
+    public Consumer(ConsumerConfig config, ChannelFactory channelFactory) {
         validateConfig(config);
         this.config = config;
         this.lookup = config.getLookup();
+        this.channelFactory = channelFactory;
         if (this.config.getLookupPeriodMillis() > 0) {
             this.scheduler.scheduleAtFixedRate(this::updateSubscriptions,
                     this.config.getLookupPeriodMillis(), this.config.getLookupPeriodMillis(), TimeUnit.MILLISECONDS);
@@ -144,12 +151,12 @@ public class Consumer implements Closeable {
         newServers.forEach(s -> tryCreateChannel(subscription, s, channels));
     }
 
-    private boolean tryCreateChannel(Subscription subscription, ServerAddress s, List<Channel> channels) {
+    private boolean tryCreateChannel(Subscription subscription, ServerAddress server, List<Channel> channels) {
         try {
-            channels.add(createChannel(subscription, s));
+            channels.add(createSubscriptionChannel(subscription, server));
             return true;
         } catch (Exception e) {
-            log.error("Failed to open channel from address {}", s, e);
+            log.error("Failed to open channel from address {}", server, e);
         }
         return false;
     }
@@ -163,8 +170,8 @@ public class Consumer implements Closeable {
         channels.removeAll(obsoletedChannels);
     }
 
-    private Channel createChannel(Subscription subscription, final ServerAddress address) {
-        Channel channel = NettyChannel.open(address, config);
+    private Channel createSubscriptionChannel(Subscription subscription, final ServerAddress address) {
+        Channel channel = channelFactory.create(address);
         channel.setMessageHandler(new ConsumerMessageHandler(subscription));
         Response response = channel.sendSubscribe(subscription.getTopic(), subscription.getChannel());
         if (response.getStatus() == Response.Status.ERROR) {

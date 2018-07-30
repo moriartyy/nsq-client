@@ -4,7 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.channel.ChannelPool;
 import mtime.mq.nsq.channel.ChannelPoolFactory;
-import mtime.mq.nsq.exceptions.NSQException;
+import mtime.mq.nsq.exceptions.NSQExceptions;
 import org.junit.Test;
 
 import java.time.LocalDateTime;
@@ -18,13 +18,14 @@ public class ProducerTest {
 
     @Test
     public void testProduceMessage() throws InterruptedException {
-        String topic = Constants.topic;
+        String topic = TestConstants.topic;
         ProducerConfig config = new ProducerConfig();
         config.setLookup(NsqServers.PRODUCE_LOOKUP);
         config.setMaxPublishRetries(3);
         config.setMaxAcquireConnectionErrorCount(1);
         config.setHaltDurationMillis(TimeUnit.SECONDS.toMillis(2));
         config.setMaxAcquireConnectionErrorCount(1);
+        config.setConnectionTimeoutMillis(1000L);
         Producer producer = new Producer(config, new MockChannelPoolFactory());
         while (true) {
             String message = ("hello " + LocalDateTime.now().toString());
@@ -67,11 +68,11 @@ public class ProducerTest {
 
         @Override
         public Channel acquire() {
-            int count = counter.incrementAndGet();
-            if (count > 3 && this.index % 2 == 1) {
-                log.debug("Acquire throwing fake exception");
-                throw new NSQException("Fake Exception");
-            }
+//            int count = counter.incrementAndGet();
+//            if (count > 3 && this.index % 2 == 1) {
+//                log.debug("Acquire throwing fake exception");
+//                throw new NSQException("Fake Exception");
+//            }
             return channel;
         }
 
@@ -94,6 +95,7 @@ public class ProducerTest {
         private final ServerAddress serverAddress;
         private final int index;
         private volatile boolean connected = true;
+        private AtomicInteger counter = new AtomicInteger();
 
         MockChannel(ServerAddress serverAddress) {
             this.serverAddress = serverAddress;
@@ -122,12 +124,27 @@ public class ProducerTest {
 
         @Override
         public void send(Command command) {
-//            log.debug("sending command: ", command.getLine());
+            log.debug("sending command: ", command.getLine());
+            if (counter.incrementAndGet() > 3) {
+                try {
+                    Thread.sleep(5000L);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
         }
 
         @Override
         public Response sendAndWait(Command command) {
             log.debug("sending command: {} to {}", command.getLine(), serverAddress);
+            if (counter.incrementAndGet() > 3) {
+                try {
+                    Thread.sleep(5000L);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                throw NSQExceptions.timeout("Send timeout", serverAddress);
+            }
             return Response.ok("ok");
         }
 

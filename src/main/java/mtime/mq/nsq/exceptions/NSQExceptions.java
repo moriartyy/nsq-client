@@ -27,6 +27,10 @@ public class NSQExceptions {
         return new TooManyCommandsException(message);
     }
 
+    public static IdentifyFailedException identifyFailed(String message) {
+        return new IdentifyFailedException(message);
+    }
+
     public static IdentifyFailedException identifyFailed(String message, Throwable cause) {
         return new IdentifyFailedException(message, cause);
     }

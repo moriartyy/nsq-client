@@ -40,6 +40,20 @@ public abstract class AbstractChannel implements Channel {
         this.sendTimeoutMillis = config.getSendTimeoutMillis();
     }
 
+    protected void identity(Config config) {
+        send(Constants.MAGIC_PROTOCOL_VERSION);
+        try {
+            Response response = this.sendAndWait(Command.identify(config));
+            if (!response.isOk()) {
+                throw NSQExceptions.identifyFailed("Identify failed, reason: " + response.getMessage());
+            }
+        } catch (Exception e) {
+            throw NSQExceptions.identifyFailed("Identify failed with  " + this.getRemoteAddress(), e);
+        }
+    }
+
+    protected abstract void send(byte[] bytes);
+
     @Override
     public int getInFlight() {
         return this.inFlight.get();

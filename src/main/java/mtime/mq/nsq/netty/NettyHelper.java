@@ -16,8 +16,6 @@ import mtime.mq.nsq.exceptions.NoConnectionsException;
  */
 public class NettyHelper {
 
-    public static final byte[] MAGIC_PROTOCOL_VERSION = "  V2".getBytes();
-
     public static Bootstrap createBootstrap(ServerAddress serverAddress, Config config) {
         Bootstrap bootstrap = new Bootstrap();
         bootstrap.group(new NioEventLoopGroup(config.getSocketThreads()));

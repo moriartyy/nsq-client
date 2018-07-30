@@ -54,7 +54,7 @@ public class NettyChannelPool implements ChannelPool {
     }
 
     private NettyChannel createChannel(io.netty.channel.Channel channel) {
-        return NettyChannel.wrap(channel, this.serverAddress, this.config);
+        return new NettyChannel(channel, this.serverAddress, this.config);
     }
 
     @Override

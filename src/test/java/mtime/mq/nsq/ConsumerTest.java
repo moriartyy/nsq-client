@@ -1,6 +1,8 @@
 package mtime.mq.nsq;
 
 import lombok.extern.slf4j.Slf4j;
+import mtime.mq.nsq.channel.Channel;
+import mtime.mq.nsq.exceptions.NSQExceptions;
 import mtime.mq.nsq.lookup.Lookup;
 import org.junit.Test;
 
@@ -10,6 +12,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author hongmiao.yu
@@ -27,8 +30,12 @@ public class ConsumerTest {
 
     @Test
     public void testConsumeMessage() throws InterruptedException {
-        Consumer consumer = createConsumer();
-        consumer.subscribe(Constants.topic, Constants.channel, messagePrinter);
+        ConsumerConfig config = new ConsumerConfig();
+        config.setLookup(NsqServers.PRODUCE_LOOKUP);
+        config.setLookupPeriodMillis(3000L);
+//        config.setMaxInFlight(100);
+        Consumer consumer = new Consumer(config);
+        consumer.subscribe(TestConstants.topic, TestConstants.channel, messagePrinter);
         System.out.println("Consumer is ready");
         printStatus(consumer);
 
@@ -60,14 +67,6 @@ public class ConsumerTest {
         }, 1, 1, TimeUnit.SECONDS);
     }
 
-    private static Consumer createConsumer() {
-        ConsumerConfig config = new ConsumerConfig();
-        config.setLookup(lookup);
-        config.setLookupPeriodMillis(3000L);
-//        config.setMaxInFlight(100);
-
-        return new Consumer(config);
-    }
 
     private static int lookupTimes = 0;
     static Lookup lookup = topic -> {
@@ -83,5 +82,77 @@ public class ConsumerTest {
 
     public static void main(String[] args) throws InterruptedException {
         new ConsumerTest().testConsumeMessage();
+    }
+
+    @Slf4j
+    static class MockChannel implements Channel {
+
+        private static AtomicInteger instanceCount = new AtomicInteger();
+        private final ServerAddress serverAddress;
+        private final int index;
+        private volatile boolean connected = true;
+        private AtomicInteger counter = new AtomicInteger();
+
+        MockChannel(ServerAddress serverAddress) {
+            this.serverAddress = serverAddress;
+            this.index = instanceCount.incrementAndGet();
+        }
+
+        @Override
+        public int getReadyCount() {
+            return 0;
+        }
+
+        @Override
+        public int getInFlight() {
+            return 0;
+        }
+
+        @Override
+        public void setMessageHandler(MessageHandler messageHandler) {
+
+        }
+
+        @Override
+        public ServerAddress getRemoteAddress() {
+            return serverAddress;
+        }
+
+        @Override
+        public void send(Command command) {
+            log.debug("sending command: ", command.getLine());
+            if (counter.incrementAndGet() > 3) {
+                try {
+                    Thread.sleep(5000L);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        @Override
+        public Response sendAndWait(Command command) {
+            log.debug("sending command: {} to {}", command.getLine(), serverAddress);
+            if (counter.incrementAndGet() > 3) {
+                try {
+                    Thread.sleep(5000L);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                throw NSQExceptions.timeout("Send timeout", serverAddress);
+            }
+            return Response.ok("ok");
+        }
+
+        @Override
+        public void close() {
+            log.debug("Close channel {}-{}", this.serverAddress, this.index);
+            connected = false;
+        }
+
+        @Override
+        public boolean isConnected() {
+            return connected;
+        }
     }
 }

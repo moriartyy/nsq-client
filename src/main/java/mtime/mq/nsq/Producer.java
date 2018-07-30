@@ -204,6 +204,7 @@ public class Producer implements Closeable {
         }
 
         if (cause != null) {
+            log.error("Publish to topic {} failed after retry {} times", topic, maxPublishRetries, cause);
             throw cause;
         }
     }
