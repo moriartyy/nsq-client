@@ -121,12 +121,12 @@ public class ProducerTest {
         }
 
         @Override
-        public void send(Command command) throws NSQException {
+        public void send(Command command) {
 //            log.debug("sending command: ", command.getLine());
         }
 
         @Override
-        public Response sendAndWait(Command command) throws NSQException {
+        public Response sendAndWait(Command command) {
             log.debug("sending command: {} to {}", command.getLine(), serverAddress);
             return Response.ok("ok");
         }

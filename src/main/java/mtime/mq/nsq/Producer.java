@@ -166,7 +166,7 @@ public class Producer implements Closeable {
         return servers;
     }
 
-    public void publish(String topic, List<byte[]> messages) throws NSQException {
+    public void publish(String topic, List<byte[]> messages) {
         if (messages == null || messages.isEmpty()) {
             return;
         }
@@ -180,15 +180,15 @@ public class Producer implements Closeable {
         publish(topic, Command.multiPublish(topic, messages));
     }
 
-    public void publish(String topic, byte[] message) throws NSQException {
+    public void publish(String topic, byte[] message) {
         publish(topic, Command.publish(topic, message));
     }
 
-    public void publish(String topic, byte[] message, int deferMillis) throws NSQException {
+    public void publish(String topic, byte[] message, int deferMillis) {
         publish(topic, Command.deferredPublish(topic, message, deferMillis));
     }
 
-    private void publish(String topic, Command command) throws NSQException {
+    private void publish(String topic, Command command) {
         checkRunningState();
 
         NSQException cause = null;

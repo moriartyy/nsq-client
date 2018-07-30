@@ -64,7 +64,7 @@ public abstract class AbstractChannel implements Channel {
     }
 
     @Override
-    public void send(Command command) throws NSQException {
+    public void send(Command command) {
         log.debug("Send command: '{}' to {}", command.getLine(), this.remoteAddress);
         try {
             doSend(command, this.sendTimeoutMillis);
@@ -76,7 +76,7 @@ public abstract class AbstractChannel implements Channel {
     protected abstract void doSend(Command command, long sendTimeoutMillis);
 
     @Override
-    public synchronized Response sendAndWait(Command command) throws NSQException {
+    public synchronized Response sendAndWait(Command command) {
         ResponseHandler responseHandler = new ResponseHandler(System.currentTimeMillis() + responseTimeoutMillis);
 
         queueResponseHandler(responseHandler);
@@ -106,24 +106,24 @@ public abstract class AbstractChannel implements Channel {
     }
 
     @Override
-    public void sendReady(int count) throws NSQException {
+    public void sendReady(int count) {
         this.readyCount = count;
         Channel.super.sendReady(count);
     }
 
     @Override
-    public void sendRequeue(byte[] messageId) throws NSQException {
+    public void sendRequeue(byte[] messageId) {
         Channel.super.sendRequeue(messageId);
     }
 
     @Override
-    public void sendRequeue(byte[] messageId, long timeoutMS) throws NSQException {
+    public void sendRequeue(byte[] messageId, long timeoutMS) {
         Channel.super.sendRequeue(messageId, timeoutMS);
         this.inFlight.getAndDecrement();
     }
 
     @Override
-    public void sendFinish(byte[] messageId) throws NSQException {
+    public void sendFinish(byte[] messageId) {
         Channel.super.sendFinish(messageId);
         this.inFlight.getAndDecrement();
     }
@@ -206,7 +206,7 @@ public abstract class AbstractChannel implements Channel {
             this.latch.countDown();
         }
 
-        Response getResponse() throws NSQException {
+        Response getResponse() {
             long waitTime = deadline - System.currentTimeMillis();
 
             if (waitTime <= 0L) {
