@@ -1,10 +1,12 @@
 package mtime.mq.nsq.netty;
 
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.Command;
 import mtime.mq.nsq.Config;
+import mtime.mq.nsq.Constants;
 import mtime.mq.nsq.ServerAddress;
 import mtime.mq.nsq.channel.AbstractChannel;
 import mtime.mq.nsq.channel.Channel;
@@ -28,6 +30,8 @@ public class NettyChannel extends AbstractChannel implements Channel {
     NettyChannel(io.netty.channel.Channel channel, ServerAddress serverAddress, Config config) {
         super(serverAddress, config);
         this.channel = channel;
+        this.channel.write(Unpooled.wrappedBuffer(Constants.MAGIC_IDENTIFIER));
+        this.channel.flush();
         channel.attr(CHANNEL_KEY).set(this);
         this.identity(config);
         log.debug("NettyChannel created, server: {} total: {}", serverAddress, instanceCount.incrementAndGet());
@@ -40,12 +44,6 @@ public class NettyChannel extends AbstractChannel implements Channel {
     @Override
     public void close() {
         this.channel.close();
-    }
-
-    @Override
-    protected void send(byte[] bytes) {
-        this.channel.write(bytes);
-        this.channel.flush();
     }
 
     @Override

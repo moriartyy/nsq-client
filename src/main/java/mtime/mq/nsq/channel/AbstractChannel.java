@@ -41,7 +41,6 @@ public abstract class AbstractChannel implements Channel {
     }
 
     protected void identity(Config config) {
-        send(Constants.MAGIC_PROTOCOL_VERSION);
         try {
             Response response = this.sendAndWait(Command.identify(config));
             if (!response.isOk()) {
@@ -51,8 +50,6 @@ public abstract class AbstractChannel implements Channel {
             throw NSQExceptions.identifyFailed("Identify failed with  " + this.getRemoteAddress(), e);
         }
     }
-
-    protected abstract void send(byte[] bytes);
 
     @Override
     public int getInFlight() {
