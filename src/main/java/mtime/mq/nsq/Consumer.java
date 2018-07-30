@@ -42,7 +42,8 @@ public class Consumer implements Closeable {
             this.scheduler.scheduleAtFixedRate(this::updateSubscriptions,
                     this.config.getLookupPeriodMillis(), this.config.getLookupPeriodMillis(), TimeUnit.MILLISECONDS);
         }
-        this.scheduler.scheduleAtFixedRate(this::reconnectToDisconnectedServers, 1, 1, TimeUnit.MINUTES);
+        this.scheduler.scheduleAtFixedRate(this::reconnectToDisconnectedServers,
+                config.getReconnectIntervalMillis(), config.getReconnectIntervalMillis(), TimeUnit.MILLISECONDS);
     }
 
     private Executor newExecutor(int threads) {
@@ -128,7 +129,10 @@ public class Consumer implements Closeable {
     private void reconnectToDisconnectedServers() {
         this.subscriptions.forEach((subscription, channels) -> {
             List<ServerAddress> disconnectedServers = removeDisconnectedServers(channels);
-            disconnectedServers.forEach(s -> tryCreateChannel(subscription, s, channels));
+            if (!disconnectedServers.isEmpty()) {
+                log.info("Reconnecting to disconnected servers: {}", disconnectedServers);
+                disconnectedServers.forEach(s -> tryCreateChannel(subscription, s, channels));
+            }
         });
     }
 

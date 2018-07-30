@@ -2,8 +2,10 @@ package mtime.mq.nsq;
 
 import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.channel.Channel;
+import mtime.mq.nsq.channel.ChannelFactory;
 import mtime.mq.nsq.exceptions.NSQExceptions;
 import mtime.mq.nsq.lookup.Lookup;
+import mtime.mq.nsq.netty.NettyChannelFactory;
 import org.junit.Test;
 
 import java.util.ArrayList;
@@ -30,14 +32,23 @@ public class ConsumerTest {
 
     @Test
     public void testConsumeMessage() throws InterruptedException {
+
         ConsumerConfig config = new ConsumerConfig();
         config.setLookup(NsqServers.PRODUCE_LOOKUP);
-        config.setLookupPeriodMillis(3000L);
+        config.setLookupPeriodMillis(10000L);
+        config.setReconnectIntervalMillis(5000L);
 //        config.setMaxInFlight(100);
-        Consumer consumer = new Consumer(config);
+        ChannelFactory factory = new NettyChannelFactory(config);
+        Consumer consumer = new Consumer(config, new ChannelFactory() {
+
+            @Override
+            public Channel create(ServerAddress server) {
+                return new MockChannel(factory.create(server), server);
+            }
+        });
         consumer.subscribe(TestConstants.topic, TestConstants.channel, messagePrinter);
         System.out.println("Consumer is ready");
-        printStatus(consumer);
+//        printStatus(consumer);
 
         CountDownLatch keepAlive = new CountDownLatch(1);
         keepAlive.await();
@@ -88,12 +99,14 @@ public class ConsumerTest {
     static class MockChannel implements Channel {
 
         private static AtomicInteger instanceCount = new AtomicInteger();
-        private final ServerAddress serverAddress;
+        private final Channel channel;
         private final int index;
+        private final ServerAddress serverAddress;
         private volatile boolean connected = true;
         private AtomicInteger counter = new AtomicInteger();
 
-        MockChannel(ServerAddress serverAddress) {
+        MockChannel(Channel channel, ServerAddress serverAddress) {
+            this.channel = channel;
             this.serverAddress = serverAddress;
             this.index = instanceCount.incrementAndGet();
         }
@@ -152,7 +165,7 @@ public class ConsumerTest {
 
         @Override
         public boolean isConnected() {
-            return connected;
+            return false;
         }
     }
 }

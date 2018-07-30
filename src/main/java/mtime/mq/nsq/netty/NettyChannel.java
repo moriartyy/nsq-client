@@ -34,7 +34,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
         this.channel.flush();
         channel.attr(CHANNEL_KEY).set(this);
         this.identity(config);
-        log.debug("NettyChannel created, server: {} total: {}", serverAddress, instanceCount.incrementAndGet());
+        log.debug("NettyChannel created, server: {}, total: {}", serverAddress, instanceCount.incrementAndGet());
     }
 
     public io.netty.channel.Channel getChannel() {
