@@ -36,7 +36,7 @@ public class NettyChannelPool implements ChannelPool {
     public Channel acquire() {
         Future<io.netty.channel.Channel> future = channelPool.acquire().awaitUninterruptibly();
         if (!future.isSuccess()) {
-            throw new NSQException("Failed to acquire client", future.cause());
+            throw NSQException.instance("Failed to acquire client", future.cause());
         }
         return getOrCreateClient(future.getNow());
     }

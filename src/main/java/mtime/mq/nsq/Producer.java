@@ -199,7 +199,7 @@ public class Producer implements Closeable {
                 doPublish(topic, command);
                 return;
             } catch (Exception e) {
-                cause = NSQException.of(e);
+                cause = NSQException.propagate(e);
             }
         }
 

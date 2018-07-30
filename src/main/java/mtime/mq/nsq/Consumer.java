@@ -60,7 +60,7 @@ public class Consumer implements Closeable {
                 .build();
 
         if (subscriptions.containsKey(subscription)) {
-            throw new NSQException("Subscription(topic=" + topic + ", channel=" + channel + ") already exist");
+            throw NSQException.instance("Subscription(topic=" + topic + ", channel=" + channel + ") already exist");
         }
 
         this.initSubscription(subscription);
@@ -168,7 +168,7 @@ public class Consumer implements Closeable {
         channel.setMessageHandler(new ConsumerMessageHandler(subscription));
         Response response = channel.sendSubscribe(subscription.getTopic(), subscription.getChannel());
         if (response.getStatus() == Response.Status.ERROR) {
-            throw new NSQException("Subscribe failed reason: " + response.getMessage());
+            throw NSQException.instance("Subscribe failed reason: " + response.getMessage());
         }
         return channel;
     }

@@ -11,6 +11,7 @@ import mtime.mq.nsq.ServerAddress;
 import mtime.mq.nsq.channel.AbstractChannel;
 import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.exceptions.NSQException;
+import mtime.mq.nsq.exceptions.NSQExceptions;
 
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -40,7 +41,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
                 throw new IllegalStateException(response.getMessage());
             }
         } catch (Exception e) {
-            throw new NSQException("identify failed with  " + serverAddress, e);
+            throw NSQExceptions.identifyFailed("Identify failed with  " + serverAddress, e);
         }
         return nettyChannel;
     }
@@ -71,10 +72,10 @@ public class NettyChannel extends AbstractChannel implements Channel {
         ChannelFuture future = this.channel.writeAndFlush(command);
         if (future.awaitUninterruptibly(sendTimeoutMillis)) {
             if (!future.isSuccess()) {
-                throw new NSQException("Send command '" + command.getLine() + "' failed to " + getRemoteAddress(), future.cause());
+                throw NSQException.instance("Send command '" + command.getLine() + "' failed to " + getRemoteAddress(), future.cause());
             }
         } else {
-            throw new NSQException("Send command '" + command.getLine() + "' timeout to " + getRemoteAddress());
+            throw NSQExceptions.timeout("Send command '" + command.getLine() + "' timeout", getRemoteAddress());
         }
     }
 }

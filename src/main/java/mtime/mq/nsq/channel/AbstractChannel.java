@@ -2,7 +2,7 @@ package mtime.mq.nsq.channel;
 
 import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.*;
-import mtime.mq.nsq.exceptions.NSQException;
+import mtime.mq.nsq.exceptions.NSQExceptions;
 import mtime.mq.nsq.frames.ErrorFrame;
 import mtime.mq.nsq.frames.Frame;
 import mtime.mq.nsq.frames.MessageFrame;
@@ -25,6 +25,7 @@ public abstract class AbstractChannel implements Channel {
     private final ServerAddress remoteAddress;
     private final long responseTimeoutMillis;
     private final long sendTimeoutMillis;
+    private final int responseQueueSize;
     private MessageHandler messageHandler;
     private final AtomicInteger inFlight = new AtomicInteger();
     private volatile int readyCount = 0;
@@ -34,7 +35,8 @@ public abstract class AbstractChannel implements Channel {
         this.remoteAddress = remoteAddress;
         this.responseTimeoutMillis = config.getResponseTimeoutMillis();
         this.heartbeatTimeoutMillis = config.getHeartbeatTimeoutInMillis();
-        this.responseHandlers = new LinkedBlockingDeque<>(config.getResponseQueueSize());
+        this.responseQueueSize = config.getResponseQueueSize();
+        this.responseHandlers = new LinkedBlockingDeque<>(responseQueueSize);
         this.sendTimeoutMillis = config.getSendTimeoutMillis();
     }
 
@@ -66,28 +68,16 @@ public abstract class AbstractChannel implements Channel {
     @Override
     public void send(Command command) {
         log.debug("Send command: '{}' to {}", command.getLine(), this.remoteAddress);
-        try {
-            doSend(command, this.sendTimeoutMillis);
-        } catch (Exception e) {
-            throw NSQException.of(e);
-        }
+        doSend(command, this.sendTimeoutMillis);
     }
 
     protected abstract void doSend(Command command, long sendTimeoutMillis);
 
     @Override
     public synchronized Response sendAndWait(Command command) {
-        ResponseHandler responseHandler = new ResponseHandler(System.currentTimeMillis() + responseTimeoutMillis);
-
+        ResponseHandler responseHandler = new ResponseHandler(responseTimeoutMillis);
         queueResponseHandler(responseHandler);
-
-        try {
-            send(command);
-        } catch (Exception e) {
-            this.close();
-            throw NSQException.of(e);
-        }
-
+        send(command);
         return responseHandler.getResponse();
     }
 
@@ -101,7 +91,7 @@ public abstract class AbstractChannel implements Channel {
 
     private void queueResponseHandler(ResponseHandler responseHandler) {
         if (!responseHandlers.offer(responseHandler)) {
-            throw new NSQException("Too many commands to " + remoteAddress);
+            throw NSQExceptions.tooManyCommands("Too many commands to " + remoteAddress + "(" + responseQueueSize + ")");
         }
     }
 
@@ -194,11 +184,13 @@ public abstract class AbstractChannel implements Channel {
 
     class ResponseHandler {
         private final long deadline;
+        private final long timeoutMillis;
         private CountDownLatch latch = new CountDownLatch(1);
         private Response response;
 
-        ResponseHandler(long deadline) {
-            this.deadline = deadline;
+        ResponseHandler(long timeoutMillis) {
+            this.timeoutMillis = timeoutMillis;
+            this.deadline = System.currentTimeMillis() + timeoutMillis;
         }
 
         void onResponse(Response response) {
@@ -210,15 +202,15 @@ public abstract class AbstractChannel implements Channel {
             long waitTime = deadline - System.currentTimeMillis();
 
             if (waitTime <= 0L) {
-                throw new NSQException("No response returned before timeout from " + remoteAddress);
+                throw NSQExceptions.timeout("No response returned in " + timeoutMillis + "ms", remoteAddress);
             }
 
             try {
                 if (!latch.await(waitTime, TimeUnit.MILLISECONDS)) {
-                    throw new NSQException("No response returned before timeout from " + remoteAddress);
+                    throw NSQExceptions.timeout("No response returned in " + timeoutMillis + "ms", remoteAddress);
                 }
             } catch (InterruptedException e) {
-                throw new NSQException("Get response is interrupted");
+                throw NSQExceptions.interrupted(e);
             }
 
             return this.response;
