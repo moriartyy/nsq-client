@@ -78,7 +78,7 @@ public abstract class AbstractChannel implements Channel {
 
     @Override
     public void send(Command command) {
-        log.debug("Send command: '{}' to {}", command.getLine(), this.remoteAddress);
+        log.debug("Send command to {}: '{}'", this.remoteAddress, command.getLine());
         doSend(command, this.sendTimeoutMillis);
     }
 
@@ -144,7 +144,7 @@ public abstract class AbstractChannel implements Channel {
     }
 
     private void receiveResponseFrame(ResponseFrame response) {
-        log.debug("Received response: {} from {}", response.getMessage(), this.remoteAddress);
+        log.debug("Received response from {}: {}", this.remoteAddress, response.getMessage());
         if (response.isHeartbeat()) {
             handleHeartbeat();
         } else {
@@ -159,7 +159,7 @@ public abstract class AbstractChannel implements Channel {
 
     private void receiveMessageFrame(MessageFrame message) {
         if (log.isDebugEnabled()) {
-            log.debug("Received message: {} from {}", new String(message.getMessageId()), this.remoteAddress);
+            log.debug("Received message from {}: {}", this.remoteAddress, new String(message.getMessageId()));
         }
 
         if (messageHandler == null) {
