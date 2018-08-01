@@ -20,15 +20,14 @@ public class NettyChannelPool implements ChannelPool {
     private final ServerAddress serverAddress;
     private final Config config;
 
-    public NettyChannelPool(ServerAddress serverAddress, Config config,
-                            long connectionTimeoutMillis, int connectionsPerServer) {
+    public NettyChannelPool(ServerAddress serverAddress, Config config, int connectionsPerServer) {
         this.serverAddress = serverAddress;
         this.config = config;
         this.channelPool = new FixedChannelPool(
                 NettyHelper.createBootstrap(serverAddress, config),
                 new NettyChannelPoolHandler(config),
                 new NettyChannelHealthChecker(),
-                FixedChannelPool.AcquireTimeoutAction.FAIL, connectionTimeoutMillis,
+                FixedChannelPool.AcquireTimeoutAction.FAIL, 3000L,
                 connectionsPerServer, 500);
     }
 

@@ -41,7 +41,7 @@ public class Producer implements Closeable {
     }
 
     private static NettyChannelPoolFactory createChannelPoolFactory(ProducerConfig config) {
-        return new NettyChannelPoolFactory(config, config.getConnectionTimeoutMillis(), config.getConnectionsPerServer());
+        return new NettyChannelPoolFactory(config, config.getConnectionsPerServer());
     }
 
     public Producer(ProducerConfig config, ChannelPoolFactory channelPoolFactory) {

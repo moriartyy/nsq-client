@@ -11,17 +11,15 @@ import mtime.mq.nsq.channel.ChannelPoolFactory;
 public class NettyChannelPoolFactory implements ChannelPoolFactory {
 
     private final Config config;
-    private final long connectionTimeoutMillis;
     private final int connectionsPerServer;
 
-    public NettyChannelPoolFactory(Config config, long connectionTimeoutMillis, int connectionsPerServer) {
+    public NettyChannelPoolFactory(Config config, int connectionsPerServer) {
         this.config = config;
-        this.connectionTimeoutMillis = connectionTimeoutMillis;
         this.connectionsPerServer = connectionsPerServer;
     }
 
     @Override
     public ChannelPool create(ServerAddress serverAddress) {
-        return new NettyChannelPool(serverAddress, config, connectionTimeoutMillis, connectionsPerServer);
+        return new NettyChannelPool(serverAddress, config, connectionsPerServer);
     }
 }
