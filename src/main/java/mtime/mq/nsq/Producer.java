@@ -34,7 +34,7 @@ public class Producer implements Closeable {
     private final Lookup lookup;
     private final ChannelPoolFactory channelPoolFactory;
     private final long haltDurationMillis;
-    private final int maxAcquireConnectionErrorCount;
+    private final int maxSendErrorCount;
 
     public Producer(ProducerConfig config) {
         this(config, createChannelPoolFactory(config));
@@ -50,7 +50,7 @@ public class Producer implements Closeable {
         this.maxPublishRetries = config.getMaxPublishRetries();
         this.channelPoolFactory = channelPoolFactory;
         this.haltDurationMillis = config.getHaltDurationMillis();
-        this.maxAcquireConnectionErrorCount = config.getMaxAcquireConnectionErrorCount();
+        this.maxSendErrorCount = config.getMaxSendErrorCount();
 
         if (config.getLookupPeriodMillis() > 0) {
             this.scheduler.scheduleAtFixedRate(this::updateServers,
@@ -103,14 +103,7 @@ public class Producer implements Closeable {
 
     private Channel acquire(String topic) throws NoConnectionsException {
         ServerAddress server = nextServer(topic);
-        try {
-            return acquire(server);
-        } catch (Exception e) {
-            if (accumulateError(server) >= maxAcquireConnectionErrorCount) {
-                halt(server);
-            }
-            throw e;
-        }
+        return acquire(server);
     }
 
     private int accumulateError(ServerAddress server) {
@@ -119,7 +112,7 @@ public class Producer implements Closeable {
     }
 
     private void halt(ServerAddress server) {
-        log.debug("Halt server {}", server);
+        log.info("Halt server {}", server);
 
         this.blacklist.add(server);
         this.scheduler.schedule(() -> this.blacklist.remove(server), haltDurationMillis, TimeUnit.MILLISECONDS);
@@ -137,6 +130,14 @@ public class Producer implements Closeable {
     private Channel acquire(ServerAddress server) {
         ChannelPool pool = getPool(server);
         return pool.acquire();
+    }
+
+    private boolean isRetriableException(Throwable e) {
+        boolean r = (e instanceof TimeoutException) || (e instanceof IllegalStateException);
+        if (!r && e.getCause() != null) {
+            r = isRetriableException(e.getCause());
+        }
+        return r;
     }
 
     private ChannelPool getPool(ServerAddress server) {
@@ -214,7 +215,7 @@ public class Producer implements Closeable {
         try {
             countUp();
             channel = acquire(topic);
-            Response response = channel.sendAndWait(command);
+            Response response = doPublish(command, channel);
             if (response.getStatus() == Response.Status.ERROR) {
                 throw new NSQException("Publish failed, reason: " + response.getMessage());
             }
@@ -223,6 +224,17 @@ public class Producer implements Closeable {
                 release(channel);
             }
             countDown();
+        }
+    }
+
+    private Response doPublish(Command command, Channel channel) {
+        try {
+            return channel.sendAndWait(command);
+        } catch (Exception e) {
+            if (accumulateError(channel.getRemoteAddress()) >= maxSendErrorCount) {
+                halt(channel.getRemoteAddress());
+            }
+            throw e;
         }
     }
 

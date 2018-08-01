@@ -13,10 +13,10 @@ import java.util.concurrent.TimeUnit;
 public class ProducerConfig extends Config {
 
     private long connectionTimeoutMillis = TimeUnit.SECONDS.toMillis(3);
-    private int connectionsPerServer = 2;
+    private int connectionsPerServer = 10;
     private int maxPublishRetries = 1;
     private long haltDurationMillis = TimeUnit.MINUTES.toMillis(1);
-    private int maxAcquireConnectionErrorCount = 3;
+    private int maxSendErrorCount = 3;
 
     @Override
     public String getClientId() {

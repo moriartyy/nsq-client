@@ -29,7 +29,7 @@ public class NettyChannelPool implements ChannelPool {
                 new NettyChannelPoolHandler(config),
                 new NettyChannelHealthChecker(),
                 FixedChannelPool.AcquireTimeoutAction.FAIL, connectionTimeoutMillis,
-                connectionsPerServer, 100);
+                connectionsPerServer, 500);
     }
 
     @Override

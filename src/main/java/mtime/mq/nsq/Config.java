@@ -53,6 +53,9 @@ public class Config {
     private long sendTimeoutMillis = 1000L;
     private int responseQueueSize = 100;
 
+    private int connectTimeoutMillis = 1000;
+    private boolean tcpNoDelay = true;
+
     public void setLookup(Lookup lookup) {
         this.lookup = SafeLookup.from(lookup);
     }

@@ -22,9 +22,9 @@ public class ProducerTest {
         ProducerConfig config = new ProducerConfig();
         config.setLookup(NsqServers.PRODUCE_LOOKUP);
         config.setMaxPublishRetries(3);
-        config.setMaxAcquireConnectionErrorCount(1);
+        config.setMaxSendErrorCount(1);
         config.setHaltDurationMillis(TimeUnit.SECONDS.toMillis(2));
-        config.setMaxAcquireConnectionErrorCount(1);
+        config.setMaxSendErrorCount(1);
         config.setConnectionTimeoutMillis(1000L);
         Producer producer = new Producer(config, new MockChannelPoolFactory());
         while (true) {
