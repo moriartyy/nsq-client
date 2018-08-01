@@ -12,7 +12,6 @@ import java.util.concurrent.TimeUnit;
 @Setter
 public class ProducerConfig extends Config {
 
-    private long connectionTimeoutMillis = TimeUnit.SECONDS.toMillis(3);
     private int connectionsPerServer = 10;
     private int maxPublishRetries = 1;
     private long haltDurationMillis = TimeUnit.MINUTES.toMillis(1);

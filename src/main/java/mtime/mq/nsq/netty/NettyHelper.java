@@ -22,7 +22,7 @@ public class NettyHelper {
         bootstrap.group(new NioEventLoopGroup(config.getSocketThreads()));
         bootstrap.channel(NioSocketChannel.class);
         bootstrap.handler(new NettyChannelInitializer(config));
-        bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, config.getConnectTimeoutMillis());
+        bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, (int) config.getConnectionTimeoutMillis());
         bootstrap.option(ChannelOption.TCP_NODELAY, config.isTcpNoDelay());
         bootstrap.remoteAddress(serverAddress.getHost(), serverAddress.getPort());
         return bootstrap;

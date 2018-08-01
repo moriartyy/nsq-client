@@ -9,6 +9,7 @@ import mtime.mq.nsq.lookup.SafeLookup;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Getter
@@ -53,7 +54,7 @@ public class Config {
     private long sendTimeoutMillis = 1000L;
     private int responseQueueSize = 100;
 
-    private int connectTimeoutMillis = 1000;
+    private long connectionTimeoutMillis = TimeUnit.SECONDS.toMillis(3);
     private boolean tcpNoDelay = true;
 
     public void setLookup(Lookup lookup) {
