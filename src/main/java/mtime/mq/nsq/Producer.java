@@ -132,14 +132,6 @@ public class Producer implements Closeable {
         return pool.acquire();
     }
 
-    private boolean isRetriableException(Throwable e) {
-        boolean r = (e instanceof TimeoutException) || (e instanceof IllegalStateException);
-        if (!r && e.getCause() != null) {
-            r = isRetriableException(e.getCause());
-        }
-        return r;
-    }
-
     private ChannelPool getPool(ServerAddress server) {
         return pools.computeIfAbsent(server, channelPoolFactory::create);
     }
