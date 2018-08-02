@@ -49,7 +49,7 @@ public class Config {
     private SslContext sslContext = null;
     private Lookup lookup;
     private long lookupPeriodMillis = 60 * 1000L;
-    private int socketThreads = 2;
+    private int socketThreads = 0;
     private long responseTimeoutMillis = 5000L;
     private long sendTimeoutMillis = 1000L;
     private int responseQueueSize = 100;
