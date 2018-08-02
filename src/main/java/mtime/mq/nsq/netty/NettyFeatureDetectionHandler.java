@@ -32,7 +32,7 @@ public class NettyFeatureDetectionHandler extends SimpleChannelInboundHandler<Fr
 
     @Override
     protected void channelRead0(final ChannelHandlerContext ctx, final Frame msg) throws Exception {
-        log.info("IdentifyResponse: " + new String(msg.getData()));
+        log.debug("IdentifyResponse: " + new String(msg.getData()));
         boolean reinstallDefaultDecoder = true;
         if (msg instanceof ResponseFrame) {
             ResponseFrame response = (ResponseFrame) msg;
@@ -91,7 +91,7 @@ public class NettyFeatureDetectionHandler extends SimpleChannelInboundHandler<Fr
         // ok we read only the the first message to set up the pipline, ejecting now!
         pipeline.remove(this);
         if (reinstallDefaultDecoder) {
-            log.info("reinstall LengthFieldBasedFrameDecoder");
+            log.debug("reinstall LengthFieldBasedFrameDecoder");
             pipeline.replace("LengthFieldBasedFrameDecoder", "LengthFieldBasedFrameDecoder",
                     new LengthFieldBasedFrameDecoder(Integer.MAX_VALUE, 0, Integer.BYTES));
         }

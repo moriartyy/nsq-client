@@ -13,7 +13,9 @@ import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.exceptions.NSQException;
 import mtime.mq.nsq.exceptions.NSQExceptions;
 
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author hongmiao.yu
@@ -23,7 +25,7 @@ public class NettyChannel extends AbstractChannel implements Channel {
 
     static final AttributeKey<NettyChannel> CHANNEL_KEY = AttributeKey.newInstance("nettyChannel");
 
-    private static final AtomicLong instanceCount = new AtomicLong();
+    private static final ConcurrentMap<ServerAddress, AtomicInteger> INSTANCE_COUNTERS = new ConcurrentHashMap<>();
 
     private io.netty.channel.Channel channel;
 
@@ -34,7 +36,11 @@ public class NettyChannel extends AbstractChannel implements Channel {
         this.channel.flush();
         channel.attr(CHANNEL_KEY).set(this);
         this.identity(config);
-        log.debug("NettyChannel created, server: {}, total: {}", serverAddress, instanceCount.incrementAndGet());
+        log.info("NettyChannel created, server: {}, current: {}", serverAddress, getCounter(serverAddress).incrementAndGet());
+    }
+
+    private AtomicInteger getCounter(ServerAddress serverAddress) {
+        return INSTANCE_COUNTERS.computeIfAbsent(serverAddress, s -> new AtomicInteger());
     }
 
     public io.netty.channel.Channel getChannel() {
@@ -43,6 +49,8 @@ public class NettyChannel extends AbstractChannel implements Channel {
 
     @Override
     public void close() {
+        log.info("NettyChannel closed, server: {}, current: {}",
+                getRemoteAddress(), getCounter(getRemoteAddress()).decrementAndGet());
         this.channel.close();
     }
 
