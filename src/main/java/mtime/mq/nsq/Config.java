@@ -52,7 +52,7 @@ public class Config {
     private int socketThreads = Runtime.getRuntime().availableProcessors();
     private long responseTimeoutMillis = 5000L;
     private long sendTimeoutMillis = 1000L;
-    private int responseQueueSize = 100;
+    private int commandQueueSize = 100;
 
     private long connectionTimeoutMillis = TimeUnit.SECONDS.toMillis(3);
     private boolean tcpNoDelay = true;

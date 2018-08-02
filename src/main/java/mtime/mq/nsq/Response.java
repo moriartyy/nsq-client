@@ -5,6 +5,8 @@ package mtime.mq.nsq;
  */
 public class Response {
 
+    public static final Response VOID = new Response(Status.OK, null);
+
     public enum Status {OK, ERROR}
 
     private final Status status;

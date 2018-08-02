@@ -26,7 +26,7 @@ public class ProducerTest {
         config.setHaltDurationMillis(TimeUnit.SECONDS.toMillis(2));
         config.setMaxSendErrorCount(1);
         config.setConnectionTimeoutMillis(1000L);
-        Producer producer = new Producer(config, new MockChannelPoolFactory());
+        Producer producer = new Producer(config);
         while (true) {
             String message = ("hello " + LocalDateTime.now().toString());
             producer.publish(topic, message.getBytes());
@@ -123,19 +123,7 @@ public class ProducerTest {
         }
 
         @Override
-        public void send(Command command) {
-            log.debug("sending command: ", command.getLine());
-            if (counter.incrementAndGet() > 3) {
-                try {
-                    Thread.sleep(5000L);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-
-        @Override
-        public Response sendAndWait(Command command) {
+        public ResponseFuture send(Command command) {
             log.debug("sending command: {} to {}", command.getLine(), serverAddress);
             if (counter.incrementAndGet() > 3) {
                 try {
@@ -145,7 +133,9 @@ public class ProducerTest {
                 }
                 throw NSQExceptions.timeout("Send timeout", serverAddress);
             }
-            return Response.ok("ok");
+            ResponseFuture f = new ResponseFuture(serverAddress);
+            f.set(Response.ok("ok"));
+            return f;
         }
 
         @Override

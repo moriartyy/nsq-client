@@ -28,6 +28,7 @@ public class Consumer implements Closeable {
             DaemonThreadFactory.create("nsqConsumerScheduler"));
     private final Lookup lookup;
     private final ChannelFactory channelFactory;
+    private final long responseTimeoutMillis;
 
     public Consumer(ConsumerConfig config) {
         this(config, new NettyChannelFactory(config));
@@ -38,6 +39,7 @@ public class Consumer implements Closeable {
         this.config = config;
         this.lookup = config.getLookup();
         this.channelFactory = channelFactory;
+        this.responseTimeoutMillis = config.getResponseTimeoutMillis();
         if (this.config.getLookupPeriodMillis() > 0) {
             this.scheduler.scheduleAtFixedRate(this::updateSubscriptions,
                     this.config.getLookupPeriodMillis(), this.config.getLookupPeriodMillis(), TimeUnit.MILLISECONDS);
@@ -177,7 +179,7 @@ public class Consumer implements Closeable {
     private Channel createSubscriptionChannel(Subscription subscription, final ServerAddress address) {
         Channel channel = channelFactory.create(address);
         channel.setMessageHandler(new ConsumerMessageHandler(subscription));
-        Response response = channel.sendSubscribe(subscription.getTopic(), subscription.getChannel());
+        Response response = channel.sendSubscribe(subscription.getTopic(), subscription.getChannel()).get(responseTimeoutMillis);
         if (response.getStatus() == Response.Status.ERROR) {
             throw NSQException.instance("Subscribe failed reason: " + response.getMessage());
         }
@@ -212,7 +214,7 @@ public class Consumer implements Closeable {
 
     private void sendClose(Channel channel) {
         try {
-            Response response = channel.sendClose();
+            Response response = channel.sendClose().get(responseTimeoutMillis);
             if (response.getStatus() == Response.Status.ERROR) {
                 log.error("Clean close failed, reason: {}", response.getMessage());
             }

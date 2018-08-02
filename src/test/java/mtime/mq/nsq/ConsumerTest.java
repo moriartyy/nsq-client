@@ -39,13 +39,14 @@ public class ConsumerTest {
         config.setReconnectIntervalMillis(5000L);
 //        config.setMaxInFlight(100);
         ChannelFactory factory = new NettyChannelFactory(config);
-        Consumer consumer = new Consumer(config, new ChannelFactory() {
-
-            @Override
-            public Channel create(ServerAddress server) {
-                return new MockChannel(factory.create(server), server);
-            }
-        });
+        Consumer consumer = new Consumer(config, factory);
+//        Consumer consumer = new Consumer(config, new ChannelFactory() {
+//
+//            @Override
+//            public Channel create(ServerAddress server) {
+//                return new MockChannel(factory.create(server), server);
+//            }
+//        });
         consumer.subscribe(TestConstants.topic, TestConstants.channel, messagePrinter);
         System.out.println("Consumer is ready");
 //        printStatus(consumer);
@@ -132,19 +133,7 @@ public class ConsumerTest {
         }
 
         @Override
-        public void send(Command command) {
-            log.debug("sending command: ", command.getLine());
-            if (counter.incrementAndGet() > 3) {
-                try {
-                    Thread.sleep(5000L);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-
-        @Override
-        public Response sendAndWait(Command command) {
+        public ResponseFuture send(Command command) {
             log.debug("sending command: {} to {}", command.getLine(), serverAddress);
             if (counter.incrementAndGet() > 3) {
                 try {
@@ -154,7 +143,9 @@ public class ConsumerTest {
                 }
                 throw NSQExceptions.timeout("Send timeout", serverAddress);
             }
-            return Response.ok("ok");
+            ResponseFuture f = new ResponseFuture(serverAddress);
+            f.set(Response.ok("ok"));
+            return f;
         }
 
         @Override

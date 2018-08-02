@@ -170,15 +170,15 @@ public class Producer implements Closeable {
             return;
         }
 
-        publish(topic, Command.multiPublish(topic, messages));
+        publish(topic, Commands.multiPublish(topic, messages));
     }
 
     public void publish(String topic, byte[] message) {
-        publish(topic, Command.publish(topic, message));
+        publish(topic, Commands.publish(topic, message));
     }
 
     public void publish(String topic, byte[] message, int deferMillis) {
-        publish(topic, Command.deferredPublish(topic, message, deferMillis));
+        publish(topic, Commands.deferredPublish(topic, message, deferMillis));
     }
 
     private void publish(String topic, Command command) {
@@ -221,7 +221,7 @@ public class Producer implements Closeable {
 
     private Response doPublish(Command command, Channel channel) {
         try {
-            return channel.sendAndWait(command);
+            return channel.send(command).get();
         } catch (Exception e) {
             if (accumulateError(channel.getRemoteAddress()) >= maxSendErrorCount) {
                 halt(channel.getRemoteAddress());
