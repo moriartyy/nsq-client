@@ -84,10 +84,10 @@ public abstract class AbstractChannel implements Channel {
 
     private void send(Command command, ResponseFuture responseFuture) {
         log.debug("Sending command to {}: {}", this.remoteAddress, command.getLine());
-        if (command.isExpectedResponse()) {
-            queue(responseFuture);
-        } else {
+        if (command == Commands.NOP) {
             responseFuture.set(Response.VOID);
+        } else {
+            queue(responseFuture);
         }
         doSend(command, responseFuture);
     }
@@ -109,21 +109,21 @@ public abstract class AbstractChannel implements Channel {
     }
 
     @Override
-    public void sendReady(int count) {
+    public ResponseFuture sendReady(int count) {
         this.readyCount = count;
-        Channel.super.sendReady(count);
+        return Channel.super.sendReady(count);
     }
 
     @Override
-    public void sendRequeue(byte[] messageId, long timeoutMS) {
+    public ResponseFuture sendRequeue(byte[] messageId, long timeoutMS) {
         this.inFlight.getAndDecrement();
-        Channel.super.sendRequeue(messageId, timeoutMS);
+        return Channel.super.sendRequeue(messageId, timeoutMS);
     }
 
     @Override
-    public void sendFinish(byte[] messageId) {
+    public ResponseFuture sendFinish(byte[] messageId) {
         this.inFlight.getAndDecrement();
-        Channel.super.sendFinish(messageId);
+        return Channel.super.sendFinish(messageId);
     }
 
     @Override

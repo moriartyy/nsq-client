@@ -51,7 +51,7 @@ public class Config {
     private long lookupPeriodMillis = 60 * 1000L;
     private int socketThreads = Runtime.getRuntime().availableProcessors();
     private long responseTimeoutMillis = 5000L;
-    private int commandQueueSize = 100;
+    private int commandQueueSize = 5000;
 
     private long connectionTimeoutMillis = TimeUnit.SECONDS.toMillis(3);
     private boolean tcpNoDelay = true;

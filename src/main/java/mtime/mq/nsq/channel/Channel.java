@@ -23,24 +23,24 @@ public interface Channel extends Closeable {
 
     boolean isConnected();
 
-    default void sendReady(int count) {
-        send(Commands.ready(count).expectedResponse(false));
+    default ResponseFuture sendReady(int count) {
+        return send(Commands.ready(count));
     }
 
-    default void sendRequeue(byte[] messageId) {
-        sendRequeue(messageId, 0L);
+    default ResponseFuture sendRequeue(byte[] messageId) {
+        return sendRequeue(messageId, 0L);
     }
 
-    default void sendRequeue(byte[] messageId, long timeoutMS) {
-        send(Commands.requeue(messageId, timeoutMS).expectedResponse(false));
+    default ResponseFuture sendRequeue(byte[] messageId, long timeoutMS) {
+        return send(Commands.requeue(messageId, timeoutMS));
     }
 
-    default void sendFinish(byte[] messageId) {
-        send(Commands.finish(messageId).expectedResponse(false));
+    default ResponseFuture sendFinish(byte[] messageId) {
+        return send(Commands.finish(messageId));
     }
 
-    default void sendTouch(byte[] messageId) {
-        send(Commands.touch(messageId).expectedResponse(false));
+    default ResponseFuture sendTouch(byte[] messageId) {
+        return send(Commands.touch(messageId));
     }
 
     default ResponseFuture sendSubscribe(String topic, String channel) {
