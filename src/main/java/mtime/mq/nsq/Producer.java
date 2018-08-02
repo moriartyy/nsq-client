@@ -35,6 +35,7 @@ public class Producer implements Closeable {
     private final ChannelPoolFactory channelPoolFactory;
     private final long haltDurationMillis;
     private final int maxSendErrorCount;
+    private final long responseTimeout;
 
     public Producer(ProducerConfig config) {
         this(config, createChannelPoolFactory(config));
@@ -51,6 +52,7 @@ public class Producer implements Closeable {
         this.channelPoolFactory = channelPoolFactory;
         this.haltDurationMillis = config.getHaltDurationMillis();
         this.maxSendErrorCount = config.getMaxSendErrorCount();
+        this.responseTimeout = config.getResponseTimeoutMillis();
 
         if (config.getLookupPeriodMillis() > 0) {
             this.scheduler.scheduleAtFixedRate(this::updateServers,
@@ -221,7 +223,7 @@ public class Producer implements Closeable {
 
     private Response doPublish(Command command, Channel channel) {
         try {
-            return channel.send(command).get();
+            return channel.send(command).get(this.responseTimeout);
         } catch (Exception e) {
             if (accumulateError(channel.getRemoteAddress()) >= maxSendErrorCount) {
                 halt(channel.getRemoteAddress());

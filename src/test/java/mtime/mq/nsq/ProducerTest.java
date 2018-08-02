@@ -27,11 +27,24 @@ public class ProducerTest {
         config.setMaxSendErrorCount(1);
         config.setConnectionTimeoutMillis(1000L);
         Producer producer = new Producer(config);
+        Thread t = new Thread(() -> {
+            while (true) {
+                String message = ("hello " + LocalDateTime.now().toString());
+                producer.publish(topic, message.getBytes());
+//            System.out.println("Sending to " + topic + ": " + message);
+                try {
+                    TimeUnit.MILLISECONDS.sleep(300);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        t.start();
         while (true) {
             String message = ("hello " + LocalDateTime.now().toString());
             producer.publish(topic, message.getBytes());
 //            System.out.println("Sending to " + topic + ": " + message);
-            Thread.sleep(1000L);
+            Thread.sleep(500L);
         }
 //        producer.close();
 

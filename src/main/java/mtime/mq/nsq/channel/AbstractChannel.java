@@ -9,9 +9,7 @@ import mtime.mq.nsq.frames.MessageFrame;
 import mtime.mq.nsq.frames.ResponseFrame;
 
 import java.util.Date;
-import java.util.concurrent.BlockingDeque;
-import java.util.concurrent.LinkedBlockingDeque;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -19,10 +17,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Slf4j
 public abstract class AbstractChannel implements Channel {
+    private static final ConcurrentMap<ServerAddress, AtomicInteger> INSTANCE_COUNTERS = new ConcurrentHashMap<>();
     private final long heartbeatTimeoutMillis;
-    private final BlockingDeque<ResponseListener> responseListeners;
+    private final BlockingDeque<ResponseFuture> responseListeners;
     private final ServerAddress remoteAddress;
-    private final long sendTimeoutMillis;
     private final int commandQueueSize;
     private MessageHandler messageHandler;
     private final AtomicInteger inFlight = new AtomicInteger();
@@ -34,7 +32,11 @@ public abstract class AbstractChannel implements Channel {
         this.heartbeatTimeoutMillis = config.getHeartbeatTimeoutInMillis();
         this.commandQueueSize = config.getCommandQueueSize();
         this.responseListeners = new LinkedBlockingDeque<>(commandQueueSize);
-        this.sendTimeoutMillis = config.getSendTimeoutMillis();
+        log.info("Channel created, server: {}, current: {}", remoteAddress, getCounter(remoteAddress).incrementAndGet());
+    }
+
+    private AtomicInteger getCounter(ServerAddress serverAddress) {
+        return INSTANCE_COUNTERS.computeIfAbsent(serverAddress, s -> new AtomicInteger());
     }
 
     protected void identity(Config config) {
@@ -76,21 +78,21 @@ public abstract class AbstractChannel implements Channel {
     @Override
     public ResponseFuture send(Command command) {
         ResponseFuture f = new ResponseFuture(remoteAddress);
-        send(command, new ResponseListener(f));
+        send(command, f);
         return f;
     }
 
-    private void send(Command command, ResponseListener responseListener) {
-        log.debug("Send command to {}: {}", this.remoteAddress, command.getLine());
-        if (command == Commands.NOP) {
-            responseListener.onResponse(Response.VOID);
+    private void send(Command command, ResponseFuture responseFuture) {
+        log.debug("Sending command to {}: {}", this.remoteAddress, command.getLine());
+        if (command.isExpectedResponse()) {
+            queue(responseFuture);
         } else {
-            queueResponseListener(responseListener);
+            responseFuture.set(Response.VOID);
         }
-        doSend(command, this.sendTimeoutMillis);
+        doSend(command, responseFuture);
     }
 
-    protected abstract void doSend(Command command, long sendTimeoutMillis);
+    protected abstract void doSend(Command command, ResponseFuture responseFuture);
 
     private boolean isHeartbeatTimeout() {
         if (this.lastHeartbeatTimeMillis == 0L) {
@@ -100,33 +102,35 @@ public abstract class AbstractChannel implements Channel {
         return System.currentTimeMillis() - this.lastHeartbeatTimeMillis > this.heartbeatTimeoutMillis;
     }
 
-    private void queueResponseListener(ResponseListener responseListener) {
+    private void queue(ResponseFuture responseListener) {
         if (!responseListeners.offer(responseListener)) {
             throw NSQExceptions.tooManyCommands("Too many commands to " + remoteAddress + "(" + commandQueueSize + ")");
         }
     }
 
     @Override
-    public ResponseFuture sendReady(int count) {
+    public void sendReady(int count) {
         this.readyCount = count;
-        return Channel.super.sendReady(count);
+        Channel.super.sendReady(count);
     }
 
     @Override
-    public ResponseFuture sendRequeue(byte[] messageId) {
-        return Channel.super.sendRequeue(messageId);
-    }
-
-    @Override
-    public ResponseFuture sendRequeue(byte[] messageId, long timeoutMS) {
+    public void sendRequeue(byte[] messageId, long timeoutMS) {
         this.inFlight.getAndDecrement();
-        return Channel.super.sendRequeue(messageId, timeoutMS);
+        Channel.super.sendRequeue(messageId, timeoutMS);
     }
 
     @Override
-    public ResponseFuture sendFinish(byte[] messageId) {
+    public void sendFinish(byte[] messageId) {
         this.inFlight.getAndDecrement();
-        return Channel.super.sendFinish(messageId);
+        Channel.super.sendFinish(messageId);
+    }
+
+    @Override
+    public void close() {
+        log.info("Channel closed, server: {}, current: {}",
+                this.remoteAddress, getCounter(this.remoteAddress).decrementAndGet());
+        this.responseListeners.clear();
     }
 
     public void receive(Frame frame) {
@@ -154,7 +158,7 @@ public abstract class AbstractChannel implements Channel {
 
     private void handleHeartbeat() {
         this.lastHeartbeatTimeMillis = System.currentTimeMillis();
-        doSend(Commands.NOP, this.sendTimeoutMillis);
+        doSend(Commands.NOP, null);
     }
 
     private void receiveMessageFrame(MessageFrame message) {
@@ -176,9 +180,9 @@ public abstract class AbstractChannel implements Channel {
     }
 
     private void handleResponse(Response response) {
-        ResponseListener responseListener = this.responseListeners.poll();
-        if (responseListener != null) {
-            responseListener.onResponse(response);
+        ResponseFuture responseListener = this.responseListeners.poll();
+        if (responseListener != null && !responseListener.isDone()) {
+            responseListener.set(response);
         }
     }
 

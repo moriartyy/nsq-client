@@ -10,6 +10,7 @@ public class Command {
 
     private String line;
     private List<byte[]> data = new ArrayList<>();
+    private boolean expectedResponse = true;
 
     Command() { /** no instances */}
 
@@ -35,5 +36,14 @@ public class Command {
 
     public String toString() {
         return this.getLine();
+    }
+
+    public boolean isExpectedResponse() {
+        return expectedResponse;
+    }
+
+    public Command expectedResponse(boolean expected) {
+        this.expectedResponse = expected;
+        return this;
     }
 }
