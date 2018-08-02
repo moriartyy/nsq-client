@@ -17,6 +17,10 @@ public class ProducerConfig extends Config {
     private long haltDurationMillis = TimeUnit.MINUTES.toMillis(1);
     private int maxSendErrorCount = 3;
 
+    public ProducerConfig() {
+        setSocketThreads(0);
+    }
+
     @Override
     public String getClientId() {
         String clientId = super.getClientId();
