@@ -84,6 +84,7 @@ public abstract class AbstractChannel implements Channel {
 
     protected abstract void doSend(Command command, long sendTimeoutMillis);
 
+    //TODO merge send and sendAndWait method, user Future pattern
     @Override
     public synchronized Response sendAndWait(Command command) {
         ResponseHandler responseHandler = new ResponseHandler(responseTimeoutMillis);
