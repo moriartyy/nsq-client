@@ -23,8 +23,8 @@ public class NSQExceptions {
         return message + ", remoteAddress=" + remoteAddress;
     }
 
-    public static TooManyCommandsException tooManyCommands(String message) {
-        return new TooManyCommandsException(message);
+    public static TooManyCommandException tooManyCommand(String message) {
+        return new TooManyCommandException(message);
     }
 
     public static IdentifyException identify(String message) {

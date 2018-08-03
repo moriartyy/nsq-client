@@ -132,7 +132,7 @@ public abstract class AbstractChannel implements Channel {
 
     private void queue(ResponseListener responseListener) {
         if (!responseListeners.offer(responseListener)) {
-            throw NSQExceptions.tooManyCommands("Too many commands to " + remoteAddress + "(" + commandQueueSize + ")");
+            throw NSQExceptions.tooManyCommand("Too many commands to " + remoteAddress + "(" + commandQueueSize + ")");
         }
         if (this.responseListeners.isEmpty()) {
             log.error("ddd");
