@@ -22,7 +22,7 @@ public class Config {
             DEFAULT_CLIENT_ID = localhost.getHostName();
             DEFAULT_HOST_NAME = localhost.getCanonicalHostName();
         } catch (UnknownHostException e) {
-            log.warn("Local host name could not resolved", e);
+            log.warn("Local host name could not resolved");
             DEFAULT_CLIENT_ID = "unknown";
             DEFAULT_HOST_NAME = "unknown";
         }
