@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.channel.ChannelFactory;
 import mtime.mq.nsq.exceptions.NSQException;
+import mtime.mq.nsq.exceptions.NSQExceptions;
 import mtime.mq.nsq.lookup.Lookup;
 import mtime.mq.nsq.netty.NettyChannelFactory;
 import mtime.mq.nsq.support.CloseableUtils;
@@ -176,12 +177,18 @@ public class Consumer implements Closeable {
         channels.removeAll(obsoletedChannels);
     }
 
-    private Channel createSubscriptionChannel(Subscription subscription, final ServerAddress address) {
-        Channel channel = channelFactory.create(address);
+    private Channel createSubscriptionChannel(Subscription subscription, final ServerAddress server) {
+        Channel channel = channelFactory.create(server);
         channel.setMessageHandler(new ConsumerMessageHandler(subscription));
-        Response response = channel.sendSubscribe(subscription.getTopic(), subscription.getChannel()).get(responseTimeoutMillis);
+        Response response = null;
+        try {
+            response = channel.sendSubscribe(subscription.getTopic(), subscription.getChannel())
+                    .get(responseTimeoutMillis, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            throw NSQExceptions.subscribe("Subscribe failed, topic=" + subscription.getTopic() + ", channel=" + subscription.getChannel() + ", server=" + server, e);
+        }
         if (response.getStatus() == Response.Status.ERROR) {
-            throw NSQException.instance("Subscribe failed reason: " + response.getMessage());
+            throw NSQExceptions.subscribe("Subscribe failed reason: " + response.getMessage());
         }
         return channel;
     }
@@ -214,7 +221,7 @@ public class Consumer implements Closeable {
 
     private void sendClose(Channel channel) {
         try {
-            Response response = channel.sendClose().get(responseTimeoutMillis);
+            Response response = channel.sendClose().get(responseTimeoutMillis, TimeUnit.MILLISECONDS);
             if (response.getStatus() == Response.Status.ERROR) {
                 log.error("Clean close failed, reason: {}", response.getMessage());
             }

@@ -27,11 +27,20 @@ public class NSQExceptions {
         return new TooManyCommandsException(message);
     }
 
-    public static IdentifyFailedException identifyFailed(String message) {
-        return new IdentifyFailedException(message);
+    public static IdentifyException identify(String message) {
+        return new IdentifyException(message);
     }
 
-    public static IdentifyFailedException identifyFailed(String message, Throwable cause) {
-        return new IdentifyFailedException(message, cause);
+    public static IdentifyException identify(String message, Throwable cause) {
+        return new IdentifyException(message, cause);
+    }
+
+
+    public static SubscribeException subscribe(String message, Throwable cause) {
+        return new SubscribeException(message, cause);
+    }
+
+    public static SubscribeException subscribe(String message) {
+        return new SubscribeException(message);
     }
 }

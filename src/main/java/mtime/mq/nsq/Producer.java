@@ -24,7 +24,7 @@ public class Producer implements Closeable {
     private final Map<String /*topic*/, List<ServerAddress>> servers = new ConcurrentHashMap<>();
     private final Map<String /*topic*/, AtomicInteger> roundRobins = new ConcurrentHashMap<>();
     private final Map<ServerAddress, ChannelPool> pools = new ConcurrentHashMap<>();
-    private final Set<ServerAddress> blacklist = new ConcurrentSkipListSet<>();
+    private final Set<ServerAddress> blacklist = new CopyOnWriteArraySet<>();
     private final Map<ServerAddress, AtomicInteger> errorCounters = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
             DaemonThreadFactory.create("nsqProducerScheduler"));
@@ -114,10 +114,17 @@ public class Producer implements Closeable {
     }
 
     private void halt(ServerAddress server) {
-        log.info("Halt server {}", server);
+        log.info("Try halt server {}", server);
 
-        this.blacklist.add(server);
-        this.scheduler.schedule(() -> this.blacklist.remove(server), haltDurationMillis, TimeUnit.MILLISECONDS);
+        boolean added = this.blacklist.add(server);
+        if (!added) {
+            return;
+        }
+
+        this.scheduler.schedule(() -> {
+            log.debug("Removed {} from black list", server);
+            this.blacklist.remove(server);
+        }, haltDurationMillis, TimeUnit.MILLISECONDS);
 
         // close pool
         ChannelPool pool = this.pools.remove(server);
@@ -209,9 +216,9 @@ public class Producer implements Closeable {
         try {
             countUp();
             channel = acquire(topic);
-            Response response = doPublish(command, channel);
+            Response response = sendCommand(command, channel);
             if (response.getStatus() == Response.Status.ERROR) {
-                throw new NSQException("Publish failed, reason: " + response.getMessage());
+                throw new NSQException("Publish to topic '" + topic + "' failed, reason: " + response.getMessage());
             }
         } finally {
             if (channel != null) {
@@ -221,14 +228,15 @@ public class Producer implements Closeable {
         }
     }
 
-    private Response doPublish(Command command, Channel channel) {
+    private Response sendCommand(Command command, Channel channel) {
         try {
-            return channel.send(command).get(this.responseTimeout);
+            return channel.send(command, this.responseTimeout);
         } catch (Exception e) {
             if (accumulateError(channel.getRemoteAddress()) >= maxSendErrorCount) {
                 halt(channel.getRemoteAddress());
             }
-            throw e;
+            log.error("publish failed", e);
+            throw NSQException.propagate(e);
         }
     }
 

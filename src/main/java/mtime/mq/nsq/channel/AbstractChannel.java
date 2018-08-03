@@ -10,6 +10,7 @@ import mtime.mq.nsq.frames.ResponseFrame;
 
 import java.util.Date;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -19,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public abstract class AbstractChannel implements Channel {
     private static final ConcurrentMap<ServerAddress, AtomicInteger> INSTANCE_COUNTERS = new ConcurrentHashMap<>();
     private final long heartbeatTimeoutMillis;
-    private final BlockingDeque<ResponseFuture> responseListeners;
+    private final BlockingDeque<ResponseListener> responseListeners;
     private final ServerAddress remoteAddress;
     private final int commandQueueSize;
     private MessageHandler messageHandler;
@@ -43,11 +44,16 @@ public abstract class AbstractChannel implements Channel {
         try {
             Response response = this.send(Commands.identify(config)).get();
             if (!response.isOk()) {
-                throw NSQExceptions.identifyFailed("Identify failed, reason: " + response.getMessage());
+                throw NSQExceptions.identify("Identify failed, reason: " + response.getMessage());
             }
         } catch (Exception e) {
-            throw NSQExceptions.identifyFailed("Identify failed with  " + this.getRemoteAddress(), e);
+            throw NSQExceptions.identify("Identify failed with  " + this.getRemoteAddress(), e);
         }
+    }
+
+    @Override
+    public int getUnconfirmedCommands() {
+        return this.responseListeners.size();
     }
 
     @Override
@@ -76,23 +82,45 @@ public abstract class AbstractChannel implements Channel {
     }
 
     @Override
-    public ResponseFuture send(Command command) {
-        ResponseFuture f = new ResponseFuture(remoteAddress);
-        send(command, f);
-        return f;
-    }
-
-    private void send(Command command, ResponseFuture responseFuture) {
+    public CompletableFuture<Response> send(Command command) {
         log.debug("Sending command to {}: {}", this.remoteAddress, command.getLine());
-        if (command == Commands.NOP) {
-            responseFuture.set(Response.VOID);
+        if (command.isResponsive()) {
+            return sendResponsiveCommand(command);
         } else {
-            queue(responseFuture);
+            return sendResponselessCommand(command);
         }
-        doSend(command, responseFuture);
     }
 
-    protected abstract void doSend(Command command, ResponseFuture responseFuture);
+    private CompletableFuture<Response> sendResponselessCommand(Command command) {
+        CompletableFuture<Response> r = new CompletableFuture<>();
+        CompletableFuture<Boolean> s = doSend(command);
+        s.whenComplete((v, t) -> {
+            if (t != null) {
+                r.completeExceptionally(t);
+            } else {
+                r.complete(Response.VOID);
+            }
+        });
+        return r;
+    }
+
+    private CompletableFuture<Response> sendResponsiveCommand(Command command) {
+        CompletableFuture<Response> r = new CompletableFuture<>();
+
+        ResponseListener l = new ResponseListener(command, r, System.currentTimeMillis());
+        queue(l);  // queue listener before sending command, to make sure when response returned listener is ready
+
+        CompletableFuture<Boolean> s = doSend(command);
+        s.whenComplete((v, t) -> {
+            if (t != null) {
+                r.completeExceptionally(t);
+                l.abandon();
+            }
+        });
+        return r;
+    }
+
+    protected abstract CompletableFuture<Boolean> doSend(Command command);
 
     private boolean isHeartbeatTimeout() {
         if (this.lastHeartbeatTimeMillis == 0L) {
@@ -102,28 +130,42 @@ public abstract class AbstractChannel implements Channel {
         return System.currentTimeMillis() - this.lastHeartbeatTimeMillis > this.heartbeatTimeoutMillis;
     }
 
-    private void queue(ResponseFuture responseListener) {
+    private void queue(ResponseListener responseListener) {
         if (!responseListeners.offer(responseListener)) {
             throw NSQExceptions.tooManyCommands("Too many commands to " + remoteAddress + "(" + commandQueueSize + ")");
         }
+        if (this.responseListeners.isEmpty()) {
+            log.error("ddd");
+        }
+        log.debug("ResponseListener queued, server:{}, command: {}, queue size:{}",
+                remoteAddress, responseListener.command.getLine(), this.responseListeners.size());
     }
 
     @Override
-    public ResponseFuture sendReady(int count) {
-        this.readyCount = count;
-        return Channel.super.sendReady(count);
+    public CompletableFuture<Response> sendReady(int count) {
+        return Channel.super.sendReady(count).whenComplete((v, t) -> {
+            if (t == null) {
+                this.readyCount = count;
+            }
+        });
     }
 
     @Override
-    public ResponseFuture sendRequeue(byte[] messageId, long timeoutMS) {
-        this.inFlight.getAndDecrement();
-        return Channel.super.sendRequeue(messageId, timeoutMS);
+    public CompletableFuture<Response> sendRequeue(byte[] messageId, long timeoutMS) {
+        return Channel.super.sendRequeue(messageId, timeoutMS).whenComplete((v, t) -> {
+            if (t == null) {
+                this.inFlight.getAndDecrement();
+            }
+        });
     }
 
     @Override
-    public ResponseFuture sendFinish(byte[] messageId) {
-        this.inFlight.getAndDecrement();
-        return Channel.super.sendFinish(messageId);
+    public CompletableFuture<Response> sendFinish(byte[] messageId) {
+        return Channel.super.sendFinish(messageId).whenComplete((v, t) -> {
+            if (t == null) {
+                this.inFlight.getAndDecrement();
+            }
+        });
     }
 
     @Override
@@ -158,7 +200,7 @@ public abstract class AbstractChannel implements Channel {
 
     private void handleHeartbeat() {
         this.lastHeartbeatTimeMillis = System.currentTimeMillis();
-        doSend(Commands.NOP, null);
+        send(Commands.NOP);
     }
 
     private void receiveMessageFrame(MessageFrame message) {
@@ -180,9 +222,15 @@ public abstract class AbstractChannel implements Channel {
     }
 
     private void handleResponse(Response response) {
-        ResponseFuture responseListener = this.responseListeners.poll();
-        if (responseListener != null && !responseListener.isDone()) {
-            responseListener.set(response);
+        ResponseListener l;
+        while ((l = this.responseListeners.poll()) != null) {
+            if (l.isAbandoned()) {
+                continue;
+            }
+            l.onResponse(response);
+            log.debug("Received response from {} for command {} after {}ms",
+                    remoteAddress, l.command.getLine(), System.currentTimeMillis() - l.timestamp);
+            break;
         }
     }
 
@@ -197,4 +245,28 @@ public abstract class AbstractChannel implements Channel {
         return message;
     }
 
+    class ResponseListener {
+        private CompletableFuture<Response> future;
+        private Command command;
+        private long timestamp;
+        private AtomicBoolean abandoned = new AtomicBoolean(false);
+
+        ResponseListener(Command command, CompletableFuture<Response> future, long timestamp) {
+            this.future = future;
+            this.command = command;
+            this.timestamp = timestamp;
+        }
+
+        public void onResponse(Response response) {
+            this.future.complete(response);
+        }
+
+        public boolean isAbandoned() {
+            return this.abandoned.get();
+        }
+
+        public void abandon() {
+            this.abandoned.set(true);
+        }
+    }
 }

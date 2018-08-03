@@ -4,9 +4,14 @@ import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
-import mtime.mq.nsq.*;
+import mtime.mq.nsq.Command;
+import mtime.mq.nsq.Config;
+import mtime.mq.nsq.Constants;
+import mtime.mq.nsq.ServerAddress;
 import mtime.mq.nsq.channel.AbstractChannel;
 import mtime.mq.nsq.channel.Channel;
+
+import java.util.concurrent.CompletableFuture;
 
 /**
  * @author hongmiao.yu
@@ -43,28 +48,17 @@ public class NettyChannel extends AbstractChannel implements Channel {
     }
 
     @Override
-    protected void doSend(Command command, ResponseFuture responseFuture) {
+    protected CompletableFuture<Boolean> doSend(Command command) {
+        CompletableFuture<Boolean> r = new CompletableFuture<>();
         ChannelFuture channelFuture = this.channel.writeAndFlush(command);
-        if (responseFuture != null) {
-            channelFuture.addListener(f -> {
-
-                if (!f.isSuccess()) {
-
-                    String errorMessage = getSendFailedMessage(command);
-
-                    if (!responseFuture.isDone()) {
-                        responseFuture.set(Response.error(errorMessage));
-                    }
-
-                    if (f.cause() != null) {
-                        log.error(errorMessage, f.cause());
-                    }
-                }
-            });
-        }
-    }
-
-    private String getSendFailedMessage(Command command) {
-        return "Send command '" + command.getLine() + "' to " + getRemoteAddress() + " failed";
+        channelFuture.addListener(f -> {
+            if (f.isSuccess()) {
+                r.complete(Boolean.TRUE);
+            } else {
+                r.completeExceptionally(f.cause());
+                log.error("Send command '" + command.getLine() + "' to " + getRemoteAddress() + " failed", f.cause());
+            }
+        });
+        return r;
     }
 }

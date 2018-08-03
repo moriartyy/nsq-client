@@ -1,13 +1,21 @@
 package mtime.mq.nsq.channel;
 
 import mtime.mq.nsq.*;
+import mtime.mq.nsq.exceptions.NSQException;
+import mtime.mq.nsq.exceptions.NSQExceptions;
 
 import java.io.Closeable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * @author hongmiao.yu
  */
 public interface Channel extends Closeable {
+
+    int getUnconfirmedCommands();
 
     int getReadyCount();
 
@@ -17,37 +25,50 @@ public interface Channel extends Closeable {
 
     ServerAddress getRemoteAddress();
 
-    ResponseFuture send(Command command);
+    CompletableFuture<Response> send(Command command);
+
+    default Response send(Command command, long timeoutMillis) {
+        CompletableFuture<Response> r = send(command);
+        try {
+            return r.get(timeoutMillis, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            throw NSQExceptions.interrupted(e);
+        } catch (ExecutionException e) {
+            throw NSQException.propagate(e);
+        } catch (TimeoutException e) {
+            throw NSQExceptions.timeout("No response returned after " + timeoutMillis + "ms");
+        }
+    }
 
     void close();
 
     boolean isConnected();
 
-    default ResponseFuture sendReady(int count) {
+    default CompletableFuture<Response> sendReady(int count) {
         return send(Commands.ready(count));
     }
 
-    default ResponseFuture sendRequeue(byte[] messageId) {
+    default CompletableFuture<Response> sendRequeue(byte[] messageId) {
         return sendRequeue(messageId, 0L);
     }
 
-    default ResponseFuture sendRequeue(byte[] messageId, long timeoutMS) {
+    default CompletableFuture<Response> sendRequeue(byte[] messageId, long timeoutMS) {
         return send(Commands.requeue(messageId, timeoutMS));
     }
 
-    default ResponseFuture sendFinish(byte[] messageId) {
+    default CompletableFuture<Response> sendFinish(byte[] messageId) {
         return send(Commands.finish(messageId));
     }
 
-    default ResponseFuture sendTouch(byte[] messageId) {
+    default CompletableFuture<Response> sendTouch(byte[] messageId) {
         return send(Commands.touch(messageId));
     }
 
-    default ResponseFuture sendSubscribe(String topic, String channel) {
+    default CompletableFuture<Response> sendSubscribe(String topic, String channel) {
         return send(Commands.subscribe(topic, channel));
     }
 
-    default ResponseFuture sendClose() {
+    default CompletableFuture<Response> sendClose() {
         return send(Commands.startClose());
     }
 }

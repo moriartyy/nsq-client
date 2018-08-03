@@ -1,9 +1,7 @@
 package mtime.mq.nsq;
 
 import lombok.extern.slf4j.Slf4j;
-import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.channel.ChannelFactory;
-import mtime.mq.nsq.exceptions.NSQExceptions;
 import mtime.mq.nsq.lookup.Lookup;
 import mtime.mq.nsq.netty.NettyChannelFactory;
 import org.junit.Test;
@@ -14,7 +12,6 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author hongmiao.yu
@@ -35,7 +32,7 @@ public class ConsumerTest {
 
         ConsumerConfig config = new ConsumerConfig();
         config.setLookup(NsqServers.PRODUCE_LOOKUP);
-        config.setLookupPeriodMillis(10000L);
+        config.setLookupPeriodMillis(5000L);
         config.setReconnectIntervalMillis(5000L);
 //        config.setMaxInFlight(100);
         ChannelFactory factory = new NettyChannelFactory(config);
@@ -96,67 +93,67 @@ public class ConsumerTest {
         new ConsumerTest().testConsumeMessage();
     }
 
-    @Slf4j
-    static class MockChannel implements Channel {
-
-        private static AtomicInteger instanceCount = new AtomicInteger();
-        private final Channel channel;
-        private final int index;
-        private final ServerAddress serverAddress;
-        private volatile boolean connected = true;
-        private AtomicInteger counter = new AtomicInteger();
-
-        MockChannel(Channel channel, ServerAddress serverAddress) {
-            this.channel = channel;
-            this.serverAddress = serverAddress;
-            this.index = instanceCount.incrementAndGet();
-        }
-
-        @Override
-        public int getReadyCount() {
-            return 0;
-        }
-
-        @Override
-        public int getInFlight() {
-            return 0;
-        }
-
-        @Override
-        public void setMessageHandler(MessageHandler messageHandler) {
-
-        }
-
-        @Override
-        public ServerAddress getRemoteAddress() {
-            return serverAddress;
-        }
-
-        @Override
-        public ResponseFuture send(Command command) {
-            log.debug("sending command: {} to {}", command.getLine(), serverAddress);
-            if (counter.incrementAndGet() > 3) {
-                try {
-                    Thread.sleep(5000L);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                throw NSQExceptions.timeout("Send timeout", serverAddress);
-            }
-            ResponseFuture f = new ResponseFuture(serverAddress);
-            f.set(Response.ok("ok"));
-            return f;
-        }
-
-        @Override
-        public void close() {
-            log.debug("Close channel {}-{}", this.serverAddress, this.index);
-            connected = false;
-        }
-
-        @Override
-        public boolean isConnected() {
-            return false;
-        }
-    }
+//    @Slf4j
+//    static class MockChannel implements Channel {
+//
+//        private static AtomicInteger instanceCount = new AtomicInteger();
+//        private final Channel channel;
+//        private final int index;
+//        private final ServerAddress serverAddress;
+//        private volatile boolean connected = true;
+//        private AtomicInteger counter = new AtomicInteger();
+//
+//        MockChannel(Channel channel, ServerAddress serverAddress) {
+//            this.channel = channel;
+//            this.serverAddress = serverAddress;
+//            this.index = instanceCount.incrementAndGet();
+//        }
+//
+//        @Override
+//        public int getReadyCount() {
+//            return 0;
+//        }
+//
+//        @Override
+//        public int getInFlight() {
+//            return 0;
+//        }
+//
+//        @Override
+//        public void setMessageHandler(MessageHandler messageHandler) {
+//
+//        }
+//
+//        @Override
+//        public ServerAddress getRemoteAddress() {
+//            return serverAddress;
+//        }
+//
+//        @Override
+//        public ResponseFuture send(Command command) {
+//            log.debug("sending command: {} to {}", command.getLine(), serverAddress);
+//            if (counter.incrementAndGet() > 3) {
+//                try {
+//                    Thread.sleep(5000L);
+//                } catch (InterruptedException e) {
+//                    e.printStackTrace();
+//                }
+//                throw NSQExceptions.timeout("Send timeout", serverAddress);
+//            }
+//            ResponseFuture f = new ResponseFuture(serverAddress);
+//            f.set(Response.ok("ok"));
+//            return f;
+//        }
+//
+//        @Override
+//        public void close() {
+//            log.debug("Close channel {}-{}", this.serverAddress, this.index);
+//            connected = false;
+//        }
+//
+//        @Override
+//        public boolean isConnected() {
+//            return false;
+//        }
+//    }
 }

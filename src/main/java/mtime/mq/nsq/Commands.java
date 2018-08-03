@@ -1,47 +1,34 @@
 package mtime.mq.nsq;
 
-import java.nio.charset.Charset;
 import java.util.List;
 
 public class Commands {
 
+    public static final Command NOP = Command.instance("NOP").build();
 
-    // ASCII stores a reference to the charset needed for commands
-    public static final Charset ASCII = Charset.forName("ascii");
-
-    public static final Command NOP = Commands.instance("NOP");
-
-    // Identify creates a new Command to provide information about the client.  After connecting,
-    // it is generally the first message sent.
-    //
-    // The supplied body should be a map marshaled into JSON to provide some flexibility
-    // for this command to evolve over time.
-    //
-    // See http://nsq.io/clients/tcp_protocol_spec.html#identify for information
-    // on the supported options
     public static Command identify(byte[] body) {
-        return Commands.instance("IDENTIFY", body);
+        return Command.instance("IDENTIFY").data(body).responsive(true).build();
     }
 
     public static Command identify(Config config) {
-        return Commands.identify(generateIdentificationBody(config).getBytes());
+        return identify(generateIdentificationBody(config).getBytes());
     }
 
     // Touch creates a new Command to reset the timeout for
     // a given message (by id)
     public static Command touch(byte[] messageID) {
-        return Commands.instance("TOUCH " + new String(messageID, ASCII));
+        return Command.instance("TOUCH").addArgument(messageID).build();
     }
 
     // Finish creates a new Command to indiciate that
     // a given message (by id) has been processed successfully
     public static Command finish(byte[] messageID) {
-        return Commands.instance("FIN " + new String(messageID, ASCII));
+        return Command.instance("FIN").addArgument(messageID).build();
     }
 
     // Subscribe creates a new Command to subscribe to the given topic/channel
     public static Command subscribe(String topic, String channel) {
-        return Commands.instance("SUB " + topic + " " + channel);
+        return Command.instance("SUB").addArgument(topic, channel).responsive(true).build();
     }
 
     // StartClose creates a new Command to indicate that the
@@ -49,47 +36,33 @@ public class Commands {
     // send messages to a client in this state and the client is expected
     // finish pending messages and close the connection
     public static Command startClose() {
-        return Commands.instance("CLS");
+        return Command.instance("CLS").build();
     }
 
     public static Command requeue(byte[] messageID, long timeoutMillis) {
-        return Commands.instance("REQ " + new String(messageID, ASCII) + " " + timeoutMillis);
+        return Command.instance("REQ").addArgument(messageID).addArgument(timeoutMillis).build();
     }
 
     // Ready creates a new Command to specify
     // the number of messages a client is willing to receive
     public static Command ready(int rdy) {
-        return Commands.instance("RDY " + rdy);
+        return Command.instance("RDY").addArgument(rdy).build();
     }
 
     // Publish creates a new Command to write a message to a given topic
     public static Command publish(String topic, byte[] message) {
-        return Commands.instance("PUB " + topic, message);
+        return Command.instance("PUB").addArgument(topic).data(message).responsive(true).build();
     }
 
     // MultiPublish creates a new Command to write more than one message to a given topic
     // (useful for high-throughput situations to avoid roundtrips and saturate the pipe)
     // Note: can only be used with more than 1 bodies!
-    public static Command multiPublish(String topic, List<byte[]> bodies) {
-        Command cmd = Commands.instance("MPUB " + topic);
-        cmd.setData(bodies);
-        return cmd;
+    public static Command multiPublish(String topic, List<byte[]> messages) {
+        return Command.instance("MPUB").addArgument(topic).data(messages).responsive(true).build();
     }
 
     public static Command deferredPublish(String topic, byte[] message, int deferMillis) {
-        return Commands.instance("DPUB " + topic + " " + deferMillis, message);
-    }
-
-    private static Command instance(String line) {
-        Command n = new Command();
-        n.setLine(line);
-        return n;
-    }
-
-    private static Command instance(String line, byte[] bytes) {
-        Command n = instance(line);
-        n.addBytes(bytes);
-        return n;
+        return Command.instance("DPUB").addArgument(topic).addArgument(deferMillis).data(message).responsive(true).build();
     }
 
     static String generateIdentificationBody(Config config) {
