@@ -33,7 +33,7 @@ public abstract class AbstractChannel implements Channel {
         this.heartbeatTimeoutMillis = config.getHeartbeatTimeoutInMillis();
         this.commandQueueSize = config.getCommandQueueSize();
         this.responseListeners = new LinkedBlockingDeque<>(commandQueueSize);
-        log.info("Channel created, server: {}, current: {}", remoteAddress, getCounter(remoteAddress).incrementAndGet());
+        log.info("Channel created, server: {}, total: {}", remoteAddress, getCounter(remoteAddress).incrementAndGet());
     }
 
     private AtomicInteger getCounter(ServerAddress serverAddress) {
