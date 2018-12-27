@@ -5,7 +5,6 @@ import mtime.mq.nsq.channel.Channel;
 import mtime.mq.nsq.channel.ChannelPool;
 import mtime.mq.nsq.channel.ChannelPoolFactory;
 import mtime.mq.nsq.exceptions.NSQException;
-import mtime.mq.nsq.exceptions.NoConnectionsException;
 import mtime.mq.nsq.lookup.Lookup;
 import mtime.mq.nsq.netty.NettyChannelPoolFactory;
 import mtime.mq.nsq.support.CloseableUtils;
@@ -25,8 +24,8 @@ public class Producer implements Closeable {
     private final Map<String /*topic*/, AtomicInteger> roundRobins = new ConcurrentHashMap<>();
     private final Map<ServerAddress, ChannelPool> pools = new ConcurrentHashMap<>();
     private final Set<ServerAddress> blacklist = new CopyOnWriteArraySet<>();
-    private final Map<ServerAddress, AtomicInteger> errorCounters = new ConcurrentHashMap<>();
-    private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
+    private final Map<ServerAddress, List<ErrorEvent>> serverErrors = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(
             DaemonThreadFactory.create("nsqProducerScheduler"));
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final AtomicInteger pendingCommands = new AtomicInteger(0);
@@ -34,8 +33,9 @@ public class Producer implements Closeable {
     private final Lookup lookup;
     private final ChannelPoolFactory channelPoolFactory;
     private final long haltDurationMillis;
-    private final int maxSendErrorCount;
+    private final int maxPublishErrors;
     private final long responseTimeout;
+    private final long errorTimeout = TimeUnit.MINUTES.toMillis(10);
 
     public Producer(ProducerConfig config) {
         this(config, createChannelPoolFactory(config));
@@ -51,11 +51,10 @@ public class Producer implements Closeable {
         this.maxPublishRetries = config.getMaxPublishRetries();
         this.channelPoolFactory = channelPoolFactory;
         this.haltDurationMillis = config.getHaltDurationMillis();
-        this.maxSendErrorCount = config.getMaxSendErrorCount();
+        this.maxPublishErrors = config.getMaxPublishErrors();
         this.responseTimeout = config.getResponseTimeoutMillis();
-
         if (config.getLookupPeriodMillis() > 0) {
-            this.scheduler.scheduleAtFixedRate(this::updateServers,
+            this.executor.scheduleAtFixedRate(this::updateServers,
                     config.getLookupPeriodMillis(), config.getLookupPeriodMillis(), TimeUnit.MILLISECONDS);
         }
     }
@@ -80,12 +79,15 @@ public class Producer implements Closeable {
         Set<ServerAddress> obsoletedAddresses = this.pools.keySet().stream()
                 .filter(s -> !totalAddresses.contains(s)).collect(Collectors.toSet());
 
-        obsoletedAddresses.forEach(a -> {
-            ChannelPool pool = this.pools.remove(a);
-            if (pool != null) {
-                CloseableUtils.closeQuietly(pool);
-            }
-        });
+        if (!obsoletedAddresses.isEmpty()) {
+            // delay close pool
+            this.executor.schedule(() -> obsoletedAddresses.forEach(a -> {
+                ChannelPool pool = this.pools.remove(a);
+                if (pool != null) {
+                    CloseableUtils.closeQuietly(pool);
+                }
+            }), 1, TimeUnit.MINUTES);
+        }
     }
 
     private void updateServerAddressesByLookup() {
@@ -103,37 +105,27 @@ public class Producer implements Closeable {
         return new CopyOnWriteArrayList<>(this.lookup.lookup(topic));
     }
 
-    private Channel acquire(String topic) throws NoConnectionsException {
-        ServerAddress server = nextServer(topic);
-        return acquire(server);
-    }
-
-    private int accumulateError(ServerAddress server) {
-        AtomicInteger counter = this.errorCounters.computeIfAbsent(server, s -> new AtomicInteger());
-        return counter.incrementAndGet();
-    }
-
     private void halt(ServerAddress server) {
         log.info("Try halt server {}", server);
 
-        boolean added = this.blacklist.add(server);
+        boolean added = !this.blacklist.add(server);
         if (!added) {
             return;
         }
 
-        this.scheduler.schedule(() -> {
+        this.executor.schedule(() -> {
+            // remove error counter
+            this.serverErrors.remove(server);
+
+            // close pool
+            ChannelPool pool = this.pools.remove(server);
+            if (pool != null) {
+                CloseableUtils.closeQuietly(pool);
+            }
+
             log.debug("Removed {} from black list", server);
             this.blacklist.remove(server);
         }, haltDurationMillis, TimeUnit.MILLISECONDS);
-
-        // close pool
-        ChannelPool pool = this.pools.remove(server);
-        if (pool != null) {
-            CloseableUtils.closeQuietly(pool);
-        }
-
-        // remove error counter
-        this.errorCounters.remove(server);
     }
 
     private Channel acquire(ServerAddress server) {
@@ -193,50 +185,62 @@ public class Producer implements Closeable {
     private void publish(String topic, Command command) {
         checkRunningState();
 
-        NSQException cause = null;
+        NSQException exp = null;
 
+        ServerAddress server = null;
         int i = 0;
         while (running.get() && i++ < maxPublishRetries) {
             try {
-                doPublish(topic, command);
+                server = nextServer(topic);
+                doPublish(server, command);
                 return;
             } catch (Exception e) {
-                cause = NSQException.propagate(e);
+                log.error("Publish failed {} times, topic={}, server={}", i, topic, server, e);
+                if (server != null) {
+                    recordError(server);
+                }
+                exp = NSQException.propagate(e);
             }
         }
 
-        if (cause != null) {
-            log.error("Publish to topic {} failed after retry {} times", topic, maxPublishRetries, cause);
-            throw cause;
+        if (exp != null) {
+            throw exp;
         }
     }
 
-    private void doPublish(String topic, Command command) {
+    private void recordError(ServerAddress server) {
+        List<ErrorEvent> errors = this.serverErrors.computeIfAbsent(server, s -> new CopyOnWriteArrayList<>());
+        errors.add(new ErrorEvent());
+
+        int count = 0;
+        List<ErrorEvent> copy = new ArrayList<>(errors);
+        for (ErrorEvent e : copy) {
+            if (e.isExpired()) {
+                errors.remove(e);
+            } else {
+                count++;
+            }
+        }
+
+        if (count >= maxPublishErrors) {
+            halt(server);
+        }
+    }
+
+    private void doPublish(ServerAddress server, Command command) {
         Channel channel = null;
         try {
             countUp();
-            channel = acquire(topic);
-            Response response = sendCommand(command, channel);
+            channel = acquire(server);
+            Response response = channel.send(command, this.responseTimeout);
             if (response.getStatus() == Response.Status.ERROR) {
-                throw new NSQException("Publish to topic '" + topic + "' failed, reason: " + response.getMessage());
+                throw new NSQException("Received error from remote: " + response.getMessage());
             }
         } finally {
             if (channel != null) {
                 release(channel);
             }
             countDown();
-        }
-    }
-
-    private Response sendCommand(Command command, Channel channel) {
-        try {
-            return channel.send(command, this.responseTimeout);
-        } catch (Exception e) {
-            if (accumulateError(channel.getRemoteAddress()) >= maxSendErrorCount) {
-                halt(channel.getRemoteAddress());
-            }
-            log.error("publish failed", e);
-            throw NSQException.propagate(e);
         }
     }
 
@@ -264,7 +268,7 @@ public class Producer implements Closeable {
 
     public void close() {
         running.set(false);
-        scheduler.shutdownNow();
+        executor.shutdownNow();
         waitPendingCommandsToBeCompleted(TimeUnit.SECONDS.toMillis(5L));
         closePools();
     }
@@ -281,6 +285,18 @@ public class Producer implements Closeable {
             } catch (InterruptedException e) {
                 break;
             }
+        }
+    }
+
+    class ErrorEvent {
+        private long expiration;
+
+        ErrorEvent() {
+            this.expiration = System.currentTimeMillis() + errorTimeout;
+        }
+
+        boolean isExpired() {
+            return System.currentTimeMillis() > expiration;
         }
     }
 }

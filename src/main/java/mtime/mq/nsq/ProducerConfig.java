@@ -14,8 +14,8 @@ public class ProducerConfig extends Config {
 
     private int connectionsPerServer = 10;
     private int maxPublishRetries = 1;
-    private long haltDurationMillis = TimeUnit.MINUTES.toMillis(1);
-    private int maxSendErrorCount = 3;
+    private long haltDurationMillis = TimeUnit.MINUTES.toMillis(10);
+    private int maxPublishErrors = 3;
 
     public ProducerConfig() {
         setSocketThreads(0);

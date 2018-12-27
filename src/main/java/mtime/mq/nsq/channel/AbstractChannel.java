@@ -134,9 +134,6 @@ public abstract class AbstractChannel implements Channel {
         if (!responseListeners.offer(responseListener)) {
             throw NSQExceptions.tooManyCommand("Too many commands to " + remoteAddress + "(" + commandQueueSize + ")");
         }
-        if (this.responseListeners.isEmpty()) {
-            log.error("ddd");
-        }
         log.debug("ResponseListener queued, server:{}, command: {}, queue size:{}",
                 remoteAddress, responseListener.command.getLine(), this.responseListeners.size());
     }
@@ -224,12 +221,12 @@ public abstract class AbstractChannel implements Channel {
     private void handleResponse(Response response) {
         ResponseListener l;
         while ((l = this.responseListeners.poll()) != null) {
+            log.debug("Received response from {} for command {} after {}ms",
+                    remoteAddress, l.command.getLine(), System.currentTimeMillis() - l.timestamp);
             if (l.isAbandoned()) {
                 continue;
             }
             l.onResponse(response);
-            log.debug("Received response from {} for command {} after {}ms",
-                    remoteAddress, l.command.getLine(), System.currentTimeMillis() - l.timestamp);
             break;
         }
     }

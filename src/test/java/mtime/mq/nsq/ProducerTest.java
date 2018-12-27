@@ -17,7 +17,7 @@ public class ProducerTest {
         config.setLookup(NsqServers.PRODUCE_LOOKUP);
         config.setMaxPublishRetries(3);
         config.setHaltDurationMillis(TimeUnit.SECONDS.toMillis(10));
-        config.setMaxSendErrorCount(1);
+        config.setMaxPublishErrors(1);
         config.setResponseTimeoutMillis(1000L);
         config.setConnectionTimeoutMillis(1000L);
         Producer producer = new Producer(config);
