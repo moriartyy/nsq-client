@@ -310,8 +310,8 @@ public class Consumer implements Closeable {
                 try {
                     this.handler.process(message);
                 } catch (Exception e) {
-                    log.error("Process message failed, id={}, topic={}, channel={}, server={}",
-                            new String(message.getId()), this.topic, this.channel, message.getChannel(), e);
+                    log.error("Process message failed, id={}, topic={}, channel={}",
+                            new String(message.getId()), this.topic, this.channel, e);
                 }
             });
         }
