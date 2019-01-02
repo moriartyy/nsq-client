@@ -50,7 +50,7 @@ public class Consumer implements Closeable {
     }
 
     private Executor newExecutor(int threads) {
-        return new Executor.DefaultImpl(threads);
+        return new DefaultExecutor(threads);
     }
 
     public void subscribe(String topic, String channel, MessageHandler messageHandler) {
