@@ -1,7 +1,6 @@
 package mtime.mq.nsq;
 
 import lombok.extern.slf4j.Slf4j;
-import mtime.mq.nsq.support.ClientProperties;
 
 import java.io.IOException;
 import java.util.Properties;
@@ -19,7 +18,7 @@ public class Version {
     static {
         Properties properties = new Properties();
         try {
-            properties.load(ClientProperties.class.getClassLoader().getResourceAsStream("version"));
+            properties.load(Version.class.getClassLoader().getResourceAsStream("version"));
         } catch (IOException e) {
             log.error("Failed to load version from disk");
         }
