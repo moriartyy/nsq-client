@@ -9,7 +9,6 @@
     <version>1.0.11</version>
     <name>NsqClient</name>
     <description>Java client for NSQ.</description>
-    <url>http://gitlab.mx.com/mq/nsq/java-client</url>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <lombok.version>1.16.8</lombok.version>
